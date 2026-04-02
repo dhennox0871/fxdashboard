@@ -26,7 +26,6 @@ RUN apk add --no-cache ca-certificates
 
 # Copy binary from builder
 COPY --from=builder /app/main .
-COPY --from=builder /app/.env .
 
 # Expose port from .env
 EXPOSE 4000
