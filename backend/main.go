@@ -52,6 +52,7 @@ func main() {
 	api.Get("/annually/cashier", GetAnnuallyCashier)
 
 	api.Get("/settings/company", GetCompanyInfo)
+	api.Post("/settings/sync", PostSync)
 
 	port := os.Getenv("PORT")
 	if port == "" {

@@ -114,16 +114,16 @@ export default function AnnuallyView() {
            <CircularProgress sx={{color: '#07cdae'}} />
          </Box>
       ) : (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+        <Grid container spacing={3}>
           {visibleConfigs.map(config => {
             const isKpi = config.id.includes('revenue') || config.id.includes('orders');
             return (
-              <Box key={config.id} sx={{ width: { xs: '100%', md: isKpi ? 'calc(50% - 12px)' : '100%', xl: isKpi ? 'calc(25% - 18px)' : '100%' } }}>
+              <Grid item xs={12} sm={isKpi ? 6 : 12} xl={isKpi ? 3 : 12} key={config.id}>
                 {renderConfigCard(config)}
-              </Box>
+              </Grid>
             );
           })}
-        </Box>
+        </Grid>
       )}
     </Box>
   );

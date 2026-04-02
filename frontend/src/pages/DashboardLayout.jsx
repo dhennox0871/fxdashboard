@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { AppBar, Toolbar, Typography, Drawer, List, ListItem, ListItemIcon, ListItemText, IconButton, Box, Divider } from '@mui/material';
-import { Menu, CalendarToday, InsertChart, Settings, Logout } from '@mui/icons-material';
+import { Menu, CalendarToday, InsertChart, Settings, Logout, Sync } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 
 const drawerWidth = 240;
@@ -14,7 +14,7 @@ export default function DashboardLayout() {
   const { logout, fetchWithAuth, user } = useAuth();
 
   React.useEffect(() => {
-    fetchWithAuth('http://localhost:4000/api/settings/company')
+    fetchWithAuth('/api/settings/company')
       .then(res => res.json())
       .then(data => {
         if (data.company_name) setCompanyName(data.company_name);
@@ -30,6 +30,7 @@ export default function DashboardLayout() {
     { text: 'Daily View', icon: <CalendarToday />, path: '/daily' },
     { text: 'Annually View', icon: <InsertChart />, path: '/annually' },
     { text: 'Appearance Settings', icon: <Settings />, path: '/settings' },
+    { text: 'Synchronize Data', icon: <Sync />, path: '/sync' },
   ];
 
   const drawer = (

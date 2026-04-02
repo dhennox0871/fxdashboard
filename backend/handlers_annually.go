@@ -43,17 +43,28 @@ func GetAnnuallyChart(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	defer rows.Close()
 	type MonthlyResponse struct {
 		Bulan int     `json:"bulan"`
 		Total float64 `json:"total"`
 	}
-	var result []MonthlyResponse
+	
+	// Create map to store existing data
+	monthlyData := make(map[int]float64)
 	for rows.Next() {
-		var item MonthlyResponse
-		if err := rows.Scan(&item.Bulan, &item.Total); err == nil {
-			result = append(result, item)
+		var bln int
+		var total float64
+		if err := rows.Scan(&bln, &total); err == nil {
+			monthlyData[bln] = total
 		}
+	}
+
+	// Prepare final 12-month result
+	var result []MonthlyResponse
+	for i := 1; i <= 12; i++ {
+		result = append(result, MonthlyResponse{
+			Bulan: i,
+			Total: monthlyData[i], // will be 0.0 if not found in map
+		})
 	}
 	return c.JSON(result)
 }

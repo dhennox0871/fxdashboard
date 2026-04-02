@@ -40,8 +40,8 @@ export default function DashboardCard({ config, data, nameKey, valKey }) {
       <Box sx={{ position: 'absolute', right: -20, bottom: -20, pointerEvents: 'none' }}>
         {getIcon(config.id)}
       </Box>
-      <Typography variant="subtitle1" sx={{ opacity: 0.9, fontWeight: 600 }}>{config.title}</Typography>
-      <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1.5 }}>{config.id.includes('order') ? data?.total_orders || 0 : formatCurrency(data?.total_sales || 0)}</Typography>
+      <Typography variant="subtitle2" sx={{ opacity: 0.9, fontWeight: 600, fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>{config.title}</Typography>
+      <Typography variant="h4" sx={{ fontWeight: 'bold', my: { xs: 1, sm: 1.5 }, fontSize: { xs: '1.5rem', sm: '2.125rem' } }}>{config.id.includes('order') ? data?.total_orders || 0 : formatCurrency(data?.total_sales || 0)}</Typography>
       <Box sx={{ backgroundColor: 'rgba(255,255,255,0.2)', py: 0.5, px: 2, borderRadius: 10, display: 'inline-block', mt: 1 }}>
         <Typography variant="caption" sx={{ fontWeight: 600 }}>Periode Terpilih</Typography>
       </Box>
@@ -77,21 +77,22 @@ export default function DashboardCard({ config, data, nameKey, valKey }) {
     return (
       <Paper sx={{ p: 3.5, borderRadius: '10px', mb: 3, boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>{config.title}</Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', height: 200 }}>
-          <ResponsiveContainer width="50%" height="100%">
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'center', minHeight: { xs: 350, md: 200 } }}>
+          <ResponsiveContainer width={ { xs: '100%', md: '50%' } } height={ { xs: 200, md: '100%' } }>
             <PieChart>
               <Pie data={pieData} dataKey={valKey} nameKey={nameKey} innerRadius={45} outerRadius={80} stroke="none">
                 {pieData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
               </Pie>
             </PieChart>
           </ResponsiveContainer>
-          <Box sx={{ width: '50%', pl: 2 }}>
+          <Box sx={{ width: { xs: '100%', md: '50%' }, pl: { xs: 0, md: 2 }, mt: { xs: 2, md: 0 } }}>
             {pieData.map((item, idx) => (
               <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5, alignItems: 'center' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: COLORS[idx], mr: 1.5 }} />
-                  <Typography variant="caption" sx={{ color: 'text.secondary', maxWidth: 90, noWrap: true, textOverflow: 'ellipsis', overflow: 'hidden', fontWeight: 500 }}>{item[nameKey]}</Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', maxWidth: { xs: 200, md: 90 }, noWrap: true, textOverflow: 'ellipsis', overflow: 'hidden', fontWeight: 500 }}>{item[nameKey]}</Typography>
                 </Box>
+                <Typography variant="caption" sx={{ fontWeight: 'bold' }}>{formatCurrency(item[valKey])}</Typography>
               </Box>
             ))}
           </Box>
