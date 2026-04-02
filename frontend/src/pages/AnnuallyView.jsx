@@ -117,9 +117,12 @@ export default function AnnuallyView() {
       ) : (
         <Grid container spacing={3}>
           {visibleConfigs.map(config => {
-            const isChart = config.displayType.includes('chart');
+            // Force anything that is not a basic revenue/order KPI to be 100% width
+            const isKpi = config.id.includes('revenue') || config.id.includes('orders');
+            const gridWidth = isKpi ? 6 : 12;
+            
             return (
-              <Grid item xs={12} sm={isChart ? 12 : 6} md={isChart ? 12 : 6} lg={isChart ? 12 : 6} xl={isChart ? 12 : 6} key={config.id}>
+              <Grid item xs={12} sm={gridWidth} md={gridWidth} lg={gridWidth} xl={gridWidth} key={config.id}>
                 {renderConfigCard(config)}
               </Grid>
             );
