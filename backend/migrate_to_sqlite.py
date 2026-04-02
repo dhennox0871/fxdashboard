@@ -156,7 +156,9 @@ migrate('logtrans',
     """SELECT logtransid, logtransentryno, 
        CONVERT(varchar, entrydate, 120) as entrydate,
        transtypeid, logtransentrytext, costcenterid, representativeid, createby
-       FROM logtrans WHERE transtypeid IN (10, 18)""",
+       FROM logtrans 
+       WHERE transtypeid IN (10, 18)
+       AND entrydate >= DATEADD(day, -180, GETDATE())""",
     "INSERT INTO logtrans VALUES (?,?,?,?,?,?,?,?)", 8)
 
 # logtransline (hanya transaksi penjualan)
@@ -164,7 +166,8 @@ migrate('logtransline',
     """SELECT ltl.logtranslineid, ltl.logtransid, ltl.itemid, ltl.netvalue, ltl.pajakvalue
        FROM logtransline ltl
        INNER JOIN logtrans lt ON ltl.logtransid = lt.logtransid
-       WHERE lt.transtypeid IN (10, 18)""",
+       WHERE lt.transtypeid IN (10, 18)
+       AND lt.entrydate >= DATEADD(day, -180, GETDATE())""",
     "INSERT INTO logtransline VALUES (?,?,?,?,?)", 5)
 
 # masteritem

@@ -201,7 +201,9 @@ def migrate_database(db_name):
             f"""SELECT logtransid, logtransentryno, 
                CONVERT(varchar, entrydate, 120) as entrydate,
                transtypeid, logtransentrytext, costcenterid, representativeid, createby
-               FROM [{a}] WHERE transtypeid IN (10, 18)""",
+               FROM [{a}] 
+               WHERE transtypeid IN (10, 18)
+               AND entrydate >= DATEADD(day, -180, GETDATE())""",
             "INSERT INTO logtrans VALUES (?,?,?,?,?,?,?,?)")
 
     if 'logtransline' in available and 'logtrans' in available:
@@ -211,7 +213,8 @@ def migrate_database(db_name):
             f"""SELECT ltl.logtranslineid, ltl.logtransid, ltl.itemid, ltl.netvalue, ltl.pajakvalue
                FROM [{a_ltl}] ltl
                INNER JOIN [{a_lt}] lt ON ltl.logtransid = lt.logtransid
-               WHERE lt.transtypeid IN (10, 18)""",
+               WHERE lt.transtypeid IN (10, 18)
+               AND lt.entrydate >= DATEADD(day, -180, GETDATE())""",
             "INSERT INTO logtransline VALUES (?,?,?,?,?)")
 
     if 'masteritem' in available:

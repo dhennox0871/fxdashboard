@@ -214,11 +214,15 @@ print("\nMigrating data...")
 # logtrans
 if 'logtrans' in available_tables:
     actual = available_tables['logtrans']
+    # Filter only last 180 days to keep sync fast
+    print(f"  Filtering logtrans for last 180 days...")
     migrate('logtrans', actual,
         f"""SELECT logtransid, logtransentryno, 
            CONVERT(varchar, entrydate, 120) as entrydate,
            transtypeid, logtransentrytext, costcenterid, representativeid, createby
-           FROM [{actual}] WHERE transtypeid IN (10, 18)""",
+           FROM [{actual}] 
+           WHERE transtypeid IN (10, 18) 
+           AND entrydate >= DATEADD(day, -180, GETDATE())""",
         "INSERT INTO logtrans VALUES (?,?,?,?,?,?,?,?)", 8)
 
 # logtransline (hanya transaksi penjualan)
@@ -229,7 +233,8 @@ if 'logtransline' in available_tables and 'logtrans' in available_tables:
         f"""SELECT ltl.logtranslineid, ltl.logtransid, ltl.itemid, ltl.netvalue, ltl.pajakvalue
            FROM [{actual_ltl}] ltl
            INNER JOIN [{actual_lt}] lt ON ltl.logtransid = lt.logtransid
-           WHERE lt.transtypeid IN (10, 18)""",
+           WHERE lt.transtypeid IN (10, 18)
+           AND lt.entrydate >= DATEADD(day, -180, GETDATE())""",
         "INSERT INTO logtransline VALUES (?,?,?,?,?)", 5)
 
 # masteritem
