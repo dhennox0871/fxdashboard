@@ -10,11 +10,12 @@ import os
 # --- SQL Server Connection ---
 mssql_str = (
     "DRIVER={ODBC Driver 17 for SQL Server};"
-    "SERVER=localhost,1433;"
+    "SERVER=idtemp.flexnotesuite.com,18180;"
     "DATABASE=oslank;"
     "UID=fxadmin18;"
     "PWD=r3startsaja;"
     "TrustServerCertificate=yes;"
+    "Encrypt=no;"
 )
 try:
     mssql = pyodbc.connect(mssql_str)

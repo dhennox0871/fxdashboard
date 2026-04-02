@@ -32,6 +32,7 @@ def connect_mssql(database):
             f"UID={USERNAME};"
             f"PWD={PASSWORD};"
             f"TrustServerCertificate=yes;"
+            f"Encrypt=no;"
             f"Connection Timeout=30;"
         )
         try:
