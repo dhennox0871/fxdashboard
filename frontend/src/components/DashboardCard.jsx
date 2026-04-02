@@ -102,7 +102,7 @@ export default function DashboardCard({ config, data, nameKey, valKey }) {
   };
 
   const renderBarChart = () => {
-    const barData = Array.isArray(data) ? data.slice(0, 5) : [];
+    const barData = Array.isArray(data) ? data : [];
     return (
       <Paper sx={{ p: 3.5, borderRadius: '10px', mb: 3, boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 3 }}>{config.title}</Typography>

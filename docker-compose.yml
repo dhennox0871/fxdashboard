@@ -14,8 +14,8 @@ services:
   frontend:
     build: ./frontend
     container_name: fx-frontend
-    ports:
-      - "80:80"
+#    ports:
+#      - "80:80"
     networks:
       - density-net
     depends_on:
