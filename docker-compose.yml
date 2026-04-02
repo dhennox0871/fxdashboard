@@ -2,29 +2,28 @@ version: '3.8'
 
 services:
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: fxdashboard-backend
-    ports:
-      - "4000:4000"
+    build: ./backend
+    container_name: fx-backend
     volumes:
-      - ./data:/app/data
+      - ./data:/app/data # Tempat menyimpan database SQLite
+    networks:
+      - density-net
     environment:
       - PORT=4000
       - DB_DIR=/app/data
     restart: always
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: fxdashboard-frontend
+    build: ./frontend
+    container_name: fx-frontend
     ports:
-      - "5173:80"
+      - "80:80"
+    networks:
+      - density-net
     depends_on:
       - backend
     restart: always
 
-volumes:
-  data:
+networks:
+  density-net:
+    external: true # Pastikan network ini sudah dibuat di server
