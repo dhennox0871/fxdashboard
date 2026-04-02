@@ -49,15 +49,15 @@ func PostSync(c *fiber.Ctx) error {
 
 	log.Printf("Starting sync for %s using %s", dbName, script)
 	
-	// Execute the python script
-	cmd := exec.Command("python", script)
+	// Execute the python3 script
+	cmd := exec.Command("python3", script)
 	// cmd.Dir = "." // current backend dir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("Sync failed: %v\nOutput: %s", err, string(output))
 		return c.Status(500).JSON(fiber.Map{
 			"error": "Gagal menjalankan sinkronisasi: " + err.Error(),
-			"detail": string(output),
+			"output": string(output), // Return raw output for debugging
 		})
 	}
 
