@@ -36,9 +36,10 @@ export default function AnnuallyView() {
           fetchWithAuth(`${baseUrl}/cashier?year=${selectedYear}`).then(r => r.json()),
         ]);
         
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
         setData({
           kpi: kpiRes,
-          chart: chartRes.map(item => ({...item, name: `Bulan ${item.bulan}`})), // Adjust for rechart
+          chart: chartRes.map(item => ({...item, name: monthNames[item.bulan - 1] || `B${item.bulan}`})), 
           cashier: cashierRes,
         });
       } catch (err) {
@@ -116,9 +117,10 @@ export default function AnnuallyView() {
       ) : (
         <Grid container spacing={3}>
           {visibleConfigs.map(config => {
-            const isKpi = config.displayType === 'kpi';
+            // Summary cards take partial width, charts and lists take full width
+            const isSummary = config.displayType === 'kpi' || config.id.includes('revenue') || config.id.includes('orders');
             return (
-              <Grid item xs={12} sm={isKpi ? 6 : 12} md={isKpi ? 4 : 12} xl={isKpi ? 3 : 12} key={config.id}>
+              <Grid item xs={12} sm={isSummary ? 6 : 12} md={isSummary ? 4 : 12} xl={isSummary ? 3 : 12} key={config.id}>
                 {renderConfigCard(config)}
               </Grid>
             );

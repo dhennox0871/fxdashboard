@@ -175,9 +175,9 @@ export default function DailyView() {
       ) : (
         <Grid container spacing={3}>
           {visibleConfigs.map(config => {
-            const isKpi = config.displayType === 'kpi';
+            const isSummary = config.displayType === 'kpi' || config.id.includes('revenue') || config.id.includes('orders');
             return (
-              <Grid item xs={12} sm={isKpi ? 6 : 12} md={isKpi ? 4 : 12} xl={isKpi ? 3 : 12} key={config.id}>
+              <Grid item xs={12} sm={isSummary ? 6 : 12} md={isSummary ? 4 : 12} xl={isSummary ? 3 : 12} key={config.id}>
                 {renderConfigCard(config)}
               </Grid>
             );
