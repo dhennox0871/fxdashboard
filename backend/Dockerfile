@@ -40,6 +40,8 @@ RUN apt-get update && apt-get install -y \
 
 # Copy binary from builder
 COPY --from=builder /app/main .
+# Copy python migration scripts
+COPY --from=builder /app/*.py ./
 
 # Expose port from .env
 EXPOSE 4000
