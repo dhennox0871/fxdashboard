@@ -17,8 +17,10 @@ FROM nginx:alpine
 # Copy built files
 COPY --from=build /app/dist /usr/share/nginx/html
 
+# Copy custom nginx config
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
 # Expose port (Nginx default is 80)
 EXPOSE 80
 
-# For local testing if needed, we map port 5173 to 80 in docker-compose.yml
 CMD ["nginx", "-g", "daemon off;"]

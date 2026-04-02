@@ -54,7 +54,7 @@ export default function DailyView() {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
-      const baseUrl = 'http://localhost:4000/api/daily';
+      const baseUrl = '/api/daily';
       const { startStr, endStr } = getDates();
       const dateParams = `?startDate=${startStr}&endDate=${endStr}`;
 
@@ -72,7 +72,7 @@ export default function DailyView() {
           kpi: kpiRes, group: groupRes, costcenter: ccRes, chart: chartRes, cashier: cashierRes, recent: recentRes
         });
       } catch (err) {
-        setError("Gagal memanggil API Server. Pastikan Backend aktif di localhost:4000");
+        setError("Gagal memanggil API Server.");
       } finally {
         setLoading(false);
       }

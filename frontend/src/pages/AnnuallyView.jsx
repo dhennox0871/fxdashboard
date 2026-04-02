@@ -27,7 +27,7 @@ export default function AnnuallyView() {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
-      const baseUrl = 'http://localhost:4000/api/annually';
+      const baseUrl = '/api/annually';
 
       try {
         const [kpiRes, chartRes, cashierRes] = await Promise.all([
@@ -42,7 +42,7 @@ export default function AnnuallyView() {
           cashier: cashierRes,
         });
       } catch (err) {
-        setError("Gagal memanggil Go API Server. Pastikan Backend aktif di localhost:4000");
+        setError("Gagal memanggil API Server.");
       } finally {
         setLoading(false);
       }

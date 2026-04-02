@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [loadingDb, setLoadingDb] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:4000/api/databases')
+    fetch('/api/databases')
       .then(r => r.json())
       .then(data => {
         setDatabases(data || []);
