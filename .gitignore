@@ -6,13 +6,13 @@ build/
 docker-compose.override.yml
 
 # Databases (SQLite)
-data/*.db
-data/*.db-shm
-data/*.db-wal
-backend/oslank.db*
-backend/sksmrt.db*
-backend/oslsrg.db*
-backend/oslken.db*
+# data/*.db
+# data/*.db-shm
+# data/*.db-wal
+# backend/oslank.db*
+# backend/sksmrt.db*
+# backend/oslsrg.db*
+# backend/oslken.db*
 
 # Go
 backend/test_build.exe

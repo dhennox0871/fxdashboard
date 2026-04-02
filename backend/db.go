@@ -33,6 +33,10 @@ type DatabaseInfo struct {
 func (p *DatabasePool) Init(dir string) error {
 	p.dbDir = dir
 
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("cannot create database directory '%s': %v", dir, err)
+	}
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("cannot read database directory '%s': %v", dir, err)
@@ -59,7 +63,8 @@ func (p *DatabasePool) Init(dir string) error {
 	}
 
 	if count == 0 {
-		return fmt.Errorf("no .db files found in '%s'", dir)
+		log.Printf("Warning: no .db files found in '%s'", dir)
+		return nil
 	}
 	log.Printf("Total databases loaded: %d", count)
 	return nil

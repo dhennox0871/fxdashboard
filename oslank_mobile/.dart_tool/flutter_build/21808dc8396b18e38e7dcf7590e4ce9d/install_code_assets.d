@@ -1,0 +1,1 @@
+ C:\\laragon\\www\\oslank\\oslank_mobile\\.dart_tool\\flutter_build\\21808dc8396b18e38e7dcf7590e4ce9d\\native_assets.json: 
