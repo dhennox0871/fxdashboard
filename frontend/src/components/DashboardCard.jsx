@@ -109,7 +109,7 @@ export default function DashboardCard({ config, data, nameKey, valKey }) {
         <Box sx={{ height: 220, mt: 2 }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={barData}>
-              <XAxis dataKey={nameKey} axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#aaa'}} />
+              <XAxis dataKey={nameKey} axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#aaa'}} interval={0} />
               <Tooltip cursor={{fill: 'rgba(0,0,0,0.02)'}} formatter={(value) => formatCurrency(value)} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 14px rgba(0,0,0,0.1)'}} />
               <Bar dataKey={valKey} fill={`url(#colorBar${config.id})`} radius={[6, 6, 0, 0]} barSize={25} />
               <defs>

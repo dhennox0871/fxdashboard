@@ -116,9 +116,9 @@ export default function AnnuallyView() {
       ) : (
         <Grid container spacing={3}>
           {visibleConfigs.map(config => {
-            const isKpi = config.id.includes('revenue') || config.id.includes('orders');
+            const isKpi = config.displayType === 'kpi';
             return (
-              <Grid item xs={12} sm={isKpi ? 6 : 12} xl={isKpi ? 3 : 12} key={config.id}>
+              <Grid item xs={12} sm={isKpi ? 6 : 12} md={isKpi ? 4 : 12} xl={isKpi ? 3 : 12} key={config.id}>
                 {renderConfigCard(config)}
               </Grid>
             );
