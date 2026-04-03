@@ -36,8 +36,14 @@ export default function DailyView() {
       start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
       end = new Date(today.getFullYear(), today.getMonth(), 0);
     } else if (dateRange === 'custom') {
-      if (customStart) start = new Date(customStart);
-      if (customEnd) end = new Date(customEnd);
+      if (customStart) {
+        const [y, m, d] = customStart.split('-').map(Number);
+        start = new Date(y, m - 1, d);
+      }
+      if (customEnd) {
+        const [y, m, d] = customEnd.split('-').map(Number);
+        end = new Date(y, m - 1, d);
+      }
     }
     
     const toYYYYMMDD = (d) => {

@@ -9,6 +9,7 @@ import (
 func getDateRange(c *fiber.Ctx) (string, string) {
 	startDate := c.Query("startDate", "19700101")
 	endDate := c.Query("endDate", "20991231")
+	log.Printf("DEBUG: Received startDate=%s, endDate=%s", startDate, endDate)
 	startFmt := startDate[:4] + "-" + startDate[4:6] + "-" + startDate[6:8] + " 00:00:00"
 	endFmt := endDate[:4] + "-" + endDate[4:6] + "-" + endDate[6:8] + " 23:59:59"
 	return startFmt, endFmt
