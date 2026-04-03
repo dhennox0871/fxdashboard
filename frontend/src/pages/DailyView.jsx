@@ -13,6 +13,7 @@ export default function DailyView() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [lastSync, setLastSync] = useState('');
   
   const [dateRange, setDateRange] = useState('today');
   const [anchorEl, setAnchorEl] = useState(null);
@@ -37,14 +38,18 @@ export default function DailyView() {
     } else if (dateRange === 'custom') {
       if (customStart) start = new Date(customStart);
       if (customEnd) end = new Date(customEnd);
-      // Mencegah invalid timezone offset
-      start.setMinutes(start.getMinutes() + start.getTimezoneOffset());
-      end.setMinutes(end.getMinutes() + end.getTimezoneOffset());
     }
     
+    const toYYYYMMDD = (d) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}${month}${day}`;
+    };
+
     return {
-      startStr: start.toISOString().slice(0, 10).replace(/-/g, ''),
-      endStr: end.toISOString().slice(0, 10).replace(/-/g, ''),
+      startStr: toYYYYMMDD(start),
+      endStr: toYYYYMMDD(end),
       startLabel: start.toLocaleDateString('id-ID', {day:'2-digit', month:'short', year: dateRange === 'custom' ? 'numeric' : undefined}),
       endLabel: end.toLocaleDateString('id-ID', {day:'2-digit', month:'short', year: dateRange === 'custom' ? 'numeric' : undefined})
     };
@@ -59,18 +64,20 @@ export default function DailyView() {
       const dateParams = `?startDate=${startStr}&endDate=${endStr}`;
 
       try {
-        const [kpiRes, groupRes, ccRes, chartRes, cashierRes, recentRes] = await Promise.all([
+        const [kpiRes, groupRes, ccRes, chartRes, cashierRes, recentRes, syncRes] = await Promise.all([
           fetchWithAuth(`${baseUrl}/kpi${dateParams}`).then(r => r.json()),
           fetchWithAuth(`${baseUrl}/group${dateParams}`).then(r => r.json()),
           fetchWithAuth(`${baseUrl}/costcenter${dateParams}`).then(r => r.json()),
           fetchWithAuth(`${baseUrl}/chart${dateParams}`).then(r => r.json()),
           fetchWithAuth(`${baseUrl}/cashier${dateParams}`).then(r => r.json()),
-          fetchWithAuth(`${baseUrl}/recent${dateParams}`).then(r => r.json())
+          fetchWithAuth(`${baseUrl}/recent${dateParams}`).then(r => r.json()),
+          fetchWithAuth(`/api/settings/last-sync`).then(r => r.json())
         ]);
         
         setData({
           kpi: kpiRes, group: groupRes, costcenter: ccRes, chart: chartRes, cashier: cashierRes, recent: recentRes
         });
+        if (syncRes && syncRes.last_sync) setLastSync(syncRes.last_sync);
       } catch (err) {
         setError("Gagal memanggil API Server.");
       } finally {
@@ -110,6 +117,11 @@ export default function DailyView() {
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Dashboard Harian</Typography>
           <Typography variant="body2" color="textSecondary">Meresap data transaksi harian Anda</Typography>
+          {lastSync && (
+            <Typography variant="caption" sx={{ color: '#9a55ff', fontWeight: 'medium', mt: 0.5, display: 'block' }}>
+              Update terakhir: {lastSync}
+            </Typography>
+          )}
         </Box>
 
         <Box>

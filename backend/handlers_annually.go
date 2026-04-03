@@ -16,9 +16,9 @@ func GetAnnuallyKPI(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Database tidak tersedia"})
 	}
 	year := getYearParam(c)
-	q := `SELECT COALESCE(SUM(ABS(ltl.netvalue + ltl.pajakvalue)),0), COUNT(DISTINCT lt.logtransid)
+	q := `SELECT COALESCE(-SUM(ltl.netvalue + ltl.pajakvalue),0), COUNT(DISTINCT lt.logtransid)
 		FROM logtrans lt JOIN logtransline ltl ON lt.logtransid = ltl.logtransid
-		WHERE strftime('%Y', lt.entrydate) = ? AND lt.transtypeid IN (10, 18)`
+		WHERE strftime('%Y', lt.entrydate) = ? AND lt.transtypeid IN (10, 11, 18, 19)`
 	var res KPIResponse
 	err := db.QueryRow(q, year).Scan(&res.TotalSales, &res.TotalOrders)
 	if err != nil {
@@ -35,9 +35,9 @@ func GetAnnuallyChart(c *fiber.Ctx) error {
 	}
 	year := getYearParam(c)
 	q := `SELECT CAST(strftime('%m', lt.entrydate) AS INTEGER) as bln,
-		COALESCE(SUM(ABS(ltl.netvalue + ltl.pajakvalue)), 0) as total
+		COALESCE(-SUM(ltl.netvalue + ltl.pajakvalue), 0) as total
 		FROM logtrans lt JOIN logtransline ltl ON lt.logtransid = ltl.logtransid
-		WHERE strftime('%Y', lt.entrydate) = ? AND lt.transtypeid IN (10, 18)
+		WHERE strftime('%Y', lt.entrydate) = ? AND lt.transtypeid IN (10, 11, 18, 19)
 		GROUP BY CAST(strftime('%m', lt.entrydate) AS INTEGER) ORDER BY bln ASC`
 	rows, err := db.Query(q, year)
 	if err != nil {
@@ -75,9 +75,9 @@ func GetAnnuallyCashier(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Database tidak tersedia"})
 	}
 	year := getYearParam(c)
-	q := `SELECT createby, COALESCE(SUM(ABS(logtransline.netvalue + logtransline.pajakvalue)), 0) as total
+	q := `SELECT createby, COALESCE(-SUM(logtransline.netvalue + logtransline.pajakvalue), 0) as total
 		FROM logtrans JOIN logtransline ON logtrans.logtransid = logtransline.logtransid
-		WHERE strftime('%Y', logtrans.entrydate) = ? AND logtrans.transtypeid IN (10, 18)
+		WHERE strftime('%Y', logtrans.entrydate) = ? AND logtrans.transtypeid IN (10, 11, 18, 19)
 		GROUP BY createby ORDER BY total DESC`
 	rows, err := db.Query(q, year)
 	if err != nil {

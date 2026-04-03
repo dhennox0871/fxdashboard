@@ -29,12 +29,25 @@ mc = mssql.cursor()
 print("Connected to SQL Server.")
 
 # --- SQLite Connection ---
-db_path = os.path.join(os.path.dirname(__file__), 'oslank.db')
-if os.path.exists(db_path):
-    os.remove(db_path)
+# Use the data/ directory as defined in the dashboard's .env
+db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data', 'oslank.db'))
+# if os.path.exists(db_path):
+#     os.remove(db_path)
 lite = sqlite3.connect(db_path)
 lc = lite.cursor()
 print(f"SQLite database: {db_path}")
+
+# Drop tables to ensure fresh migration
+lc.executescript("""
+DROP TABLE IF EXISTS logtrans;
+DROP TABLE IF EXISTS logtransline;
+DROP TABLE IF EXISTS masteritem;
+DROP TABLE IF EXISTS masteritemgroup;
+DROP TABLE IF EXISTS mastercostcenter;
+DROP TABLE IF EXISTS masterrepresentative;
+DROP TABLE IF EXISTS flexnotesetting;
+DROP TABLE IF EXISTS coreapplication;
+""")
 
 # ========== CREATE TABLES ==========
 
@@ -157,7 +170,7 @@ migrate('logtrans',
        CONVERT(varchar, entrydate, 120) as entrydate,
        transtypeid, logtransentrytext, costcenterid, representativeid, createby
        FROM logtrans 
-       WHERE transtypeid IN (10, 18)
+       WHERE transtypeid IN (10, 11, 18, 19)
        AND entrydate >= DATEADD(day, -180, GETDATE())""",
     "INSERT INTO logtrans VALUES (?,?,?,?,?,?,?,?)", 8)
 
@@ -166,7 +179,7 @@ migrate('logtransline',
     """SELECT ltl.logtranslineid, ltl.logtransid, ltl.itemid, ltl.netvalue, ltl.pajakvalue
        FROM logtransline ltl
        INNER JOIN logtrans lt ON ltl.logtransid = lt.logtransid
-       WHERE lt.transtypeid IN (10, 18)
+       WHERE lt.transtypeid IN (10, 11, 18, 19)
        AND lt.entrydate >= DATEADD(day, -180, GETDATE())""",
     "INSERT INTO logtransline VALUES (?,?,?,?,?)", 5)
 
@@ -202,14 +215,28 @@ user_data = json.dumps({
         {"username": "admin", "password": "admin123", "role": "admin"},
     ]
 })
-now = "2026-04-01 17:00:00"
+now_str = "2026-04-01 17:00:00"
+lc.execute("DELETE FROM coreapplication WHERE flag = 88888")
 lc.execute("""
     INSERT INTO coreapplication 
     (classname, dataid, title, description, category, enabled, flag, majorversion, minorversion, data, visible, createby, createdate, modifyby, modifydate)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-""", ('DashboardAuth', 'DASHLOGIN', 'Dashboard Login', 'User credentials for Flexnote Dashboard', 'dashboard', 1, 88888, 1, 0, user_data, 1, 'SYSTEM', now, 'SYSTEM', now))
+""", ('DashboardAuth', 'DASHLOGIN', 'Dashboard Login', 'User credentials for Flexnote Dashboard', 'dashboard', 1, 88888, 1, 0, user_data, 1, 'SYSTEM', now_str, 'SYSTEM', now_str))
+
+# ========== INSERT LAST SYNC TIMESTAMP ==========
+from datetime import datetime
+sync_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+print(f"\nRecording last sync time: {sync_time} (flag=99999)...")
+lc.execute("DELETE FROM coreapplication WHERE flag = 99999")
+lc.execute("""
+    INSERT INTO coreapplication 
+    (classname, dataid, title, description, category, enabled, flag, data, createby, createdate)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+""", ('DashboardMeta', 'LASTSYNC', 'Last Sync', 'Last successful data migration', 'metadata', 1, 99999, sync_time, 'SYSTEM', sync_time))
+
 lite.commit()
 print(f"  Default user created: admin / admin123")
+print(f"  Last sync recorded.")
 
 # ========== VERIFY ==========
 print("\n=== VERIFICATION ===")
