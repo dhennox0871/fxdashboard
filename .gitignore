@@ -1,6 +1,7 @@
 # Docker and System
 node_modules/
-dist/
+# dist/ (allow pushing pre-built assets)
+# dist/
 build/
 .docker/
 docker-compose.override.yml
@@ -16,7 +17,8 @@ docker-compose.override.yml
 
 # Go
 backend/test_build.exe
-backend/main
+# backend/main (allow pushing pre-built Linux binary)
+# backend/main
 
 # Environment and Secrets
 .env
