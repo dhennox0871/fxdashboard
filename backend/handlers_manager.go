@@ -48,6 +48,25 @@ func PostManagerConnection(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Koneksi database berhasil ditambahkan"})
 }
 
+// PUT /api/manager/connections/:id
+func UpdateManagerConnection(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var conn ClientConnection
+	if err := c.BodyParser(&conn); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Format data tidak valid"})
+	}
+
+	_, err := DBPool.managerDB.Exec(
+		"UPDATE connections SET name = ?, host = ?, db_name = ?, username = ?, password = ?, driver = ? WHERE id = ?",
+		strings.ToUpper(conn.Name), conn.Host, conn.DBName, conn.Username, conn.Password, conn.Driver, id,
+	)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal mengupdate koneksi: " + err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "Koneksi database berhasil diperbarui"})
+}
+
 // DELETE /api/manager/connections/:id
 func DeleteManagerConnection(c *fiber.Ctx) error {
 	id := c.Params("id")

@@ -128,18 +128,35 @@ def main():
 
     print(f"\n🚀 Starting Sync for: {args.db} on {args.host}")
     
-    # 1. Connect to MSSQL
-    conn_str = (
-        f"DRIVER={{{args.driver}}};SERVER={args.host};DATABASE={args.db};"
-        f"UID={args.user};PWD={args.password};TrustServerCertificate=yes;Encrypt=no;"
-    )
-    try:
-        mssql = pyodbc.connect(conn_str, timeout=30)
-        mc = mssql.cursor()
-        print(f"  Connected to SQL Server")
-    except Exception as e:
-        print(f"  ❌ FAILED: Connection error: {e}")
+    # 1. Connect to MSSQL (Auto-detect driver)
+    drivers = [
+        args.driver, # First try user's choice
+        "ODBC Driver 18 for SQL Server",
+        "ODBC Driver 17 for SQL Server",
+        "SQL Server",
+    ]
+    
+    mssql = None
+    last_error = ""
+    for driver in drivers:
+        if driver == "": continue
+        conn_str = (
+            f"DRIVER={{{driver}}};SERVER={args.host};DATABASE={args.db};"
+            f"UID={args.user};PWD={args.password};TrustServerCertificate=yes;Encrypt=no;"
+        )
+        try:
+            mssql = pyodbc.connect(conn_str, timeout=30)
+            print(f"  ✅ Connected using: {driver}")
+            break
+        except Exception as e:
+            last_error = str(e)
+            continue
+
+    if not mssql:
+        print(f"  ❌ FAILED: Connection error: {last_error}")
         sys.exit(1)
+    
+    mc = mssql.cursor()
 
     # 2. Setup SQLite
     db_dir = os.environ.get('DB_DIR', './data')

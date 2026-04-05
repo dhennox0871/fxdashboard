@@ -60,6 +60,7 @@ func main() {
 	mgr := api.Group("/manager", SuperOnly)
 	mgr.Get("/connections", GetManagerConnections)
 	mgr.Post("/connections", PostManagerConnection)
+	mgr.Put("/connections/:id", UpdateManagerConnection)
 	mgr.Delete("/connections/:id", DeleteManagerConnection)
 
 	mgr.Get("/users", GetManagerUsers)

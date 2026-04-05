@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Typography, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Alert } from '@mui/material';
+import { Box, Typography, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Alert, Tooltip } from '@mui/material';
 import Delete from '@mui/icons-material/Delete';
 import Add from '@mui/icons-material/Add';
+import Edit from '@mui/icons-material/Edit';
 import { useAuth } from '../context/AuthContext';
 
 export default function DatabaseManager() {
@@ -10,7 +10,9 @@ export default function DatabaseManager() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [formData, setFormData] = useState({ name: '', host: '', db_name: '', username: '', password: '', driver: 'ODBC Driver 17 for SQL Server' });
+  const [isEdit, setIsEdit] = useState(false);
+  const [selectedId, setSelectedId] = useState(null);
+  const [formData, setFormData] = useState({ name: '', host: '', db_name: '', username: '', password: '', driver: '' });
 
   const fetchConnections = async () => {
     try {
@@ -26,25 +28,48 @@ export default function DatabaseManager() {
     fetchConnections();
   }, []);
 
-  const handleAdd = async () => {
+  const handleSave = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchWithAuth('/api/manager/connections', {
-        method: 'POST',
+      const url = isEdit ? `/api/manager/connections/${selectedId}` : '/api/manager/connections';
+      const method = isEdit ? 'PUT' : 'POST';
+      
+      const res = await fetchWithAuth(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setOpen(false);
-      setFormData({ name: '', host: '', db_name: '', username: '', password: '', driver: 'ODBC Driver 17 for SQL Server' });
+      resetForm();
       fetchConnections();
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const resetForm = () => {
+    setFormData({ name: '', host: '', db_name: '', username: '', password: '', driver: '' });
+    setIsEdit(false);
+    setSelectedId(null);
+  };
+
+  const handleEditOpen = (row) => {
+    setFormData({ 
+      name: row.name, 
+      host: row.host, 
+      db_name: row.db_name, 
+      username: row.username, 
+      password: row.password, 
+      driver: row.driver 
+    });
+    setSelectedId(row.id);
+    setIsEdit(true);
+    setOpen(true);
   };
 
   const handleDelete = async (id) => {
@@ -90,7 +115,14 @@ export default function DatabaseManager() {
                 <TableCell>{row.db_name}</TableCell>
                 <TableCell>{row.username}</TableCell>
                 <TableCell align="right">
-                  <IconButton color="error" onClick={() => handleDelete(row.id)}><Delete /></IconButton>
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                    <Tooltip title="Edit Koneksi">
+                      <IconButton color="primary" onClick={() => handleEditOpen(row)}><Edit /></IconButton>
+                    </Tooltip>
+                    <Tooltip title="Hapus Koneksi">
+                      <IconButton color="error" onClick={() => handleDelete(row.id)}><Delete /></IconButton>
+                    </Tooltip>
+                  </Box>
                 </TableCell>
               </TableRow>
             ))}
@@ -103,8 +135,8 @@ export default function DatabaseManager() {
         </Table>
       </TableContainer>
 
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 'bold' }}>Tambah Koneksi Baru</DialogTitle>
+      <Dialog open={open} onClose={() => { setOpen(false); resetForm(); }} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 'bold' }}>{isEdit ? 'Update Koneksi' : 'Tambah Koneksi Baru'}</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             <TextField label="Nama Tampilan (Contoh: OSLSRG)" fullWidth value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value.toUpperCase()})} />
@@ -112,13 +144,13 @@ export default function DatabaseManager() {
             <TextField label="Nama Database SQL" fullWidth value={formData.db_name} onChange={(e) => setFormData({...formData, db_name: e.target.value})} />
             <TextField label="Username SQL" fullWidth value={formData.username} onChange={(e) => setFormData({...formData, username: e.target.value})} />
             <TextField label="Password SQL" type="password" fullWidth value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
-            <TextField label="ODBC Driver" fullWidth value={formData.driver} onChange={(e) => setFormData({...formData, driver: e.target.value})} helperText="Default: ODBC Driver 17 for SQL Server" />
+            <TextField label="ODBC Driver" fullWidth value={formData.driver} onChange={(e) => setFormData({...formData, driver: e.target.value})} placeholder="Auto (Recomended)" helperText="Kosongkan untuk deteksi otomatis (Driver 18/17)" />
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>
-          <Button onClick={() => setOpen(false)}>Batal</Button>
-          <Button variant="contained" onClick={handleAdd} disabled={loading} sx={{ bgcolor: '#ffab00', '&:hover': { bgcolor: '#e69a00' } }}>
-            {loading ? 'Menyimpan...' : 'Simpan Koneksi'}
+          <Button onClick={() => { setOpen(false); resetForm(); }}>Batal</Button>
+          <Button variant="contained" onClick={handleSave} disabled={loading} sx={{ bgcolor: '#ffab00', '&:hover': { bgcolor: '#e69a00' } }}>
+            {loading ? 'Menyimpan...' : (isEdit ? 'Ubah Koneksi' : 'Simpan Koneksi')}
           </Button>
         </DialogActions>
       </Dialog>
