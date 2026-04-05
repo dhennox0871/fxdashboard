@@ -8,10 +8,12 @@ print("=" * 60)
 print("  DATABASE VERIFICATION REPORT")
 print("=" * 60)
 
+db_dir = os.environ.get('DB_DIR', os.path.abspath(os.path.join(SCRIPT_DIR, '..', 'data')))
+
 for db_name in databases:
-    db_path = os.path.join(SCRIPT_DIR, f'{db_name}.db')
+    db_path = os.path.join(db_dir, f'{db_name}.db')
     if not os.path.exists(db_path):
-        print(f"\n  {db_name}.db: NOT FOUND")
+        print(f"\n  {db_path}: NOT FOUND")
         continue
 
     size = os.path.getsize(db_path)

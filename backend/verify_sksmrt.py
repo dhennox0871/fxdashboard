@@ -1,7 +1,8 @@
 import sqlite3
 import os
 
-db_path = os.path.join(os.path.dirname(__file__), 'sksmrt.db')
+db_dir = os.environ.get('DB_DIR', os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data')))
+db_path = os.path.join(db_dir, 'sksmrt.db')
 if not os.path.exists(db_path):
     print("ERROR: sksmrt.db not found!")
     exit(1)

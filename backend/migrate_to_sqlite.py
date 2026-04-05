@@ -28,11 +28,14 @@ except:
 mc = mssql.cursor()
 print("Connected to SQL Server.")
 
-# --- SQLite Connection ---
-# Use the data/ directory as defined in the dashboard's .env
-db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data', 'oslank.db'))
-# if os.path.exists(db_path):
-#     os.remove(db_path)
+# SQLite Connection
+# Robust path: use DB_DIR env (for Docker) or fallback to local sibling data/ folder
+db_dir = os.environ.get('DB_DIR', os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data')))
+db_path = os.path.join(db_dir, 'oslank.db')
+
+# Ensure the directory exists (important for Docker volumes)
+os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
 lite = sqlite3.connect(db_path)
 lc = lite.cursor()
 print(f"SQLite database: {db_path}")

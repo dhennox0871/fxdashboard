@@ -181,11 +181,17 @@ def migrate_database(db_name):
 
     print(f"  Tables found: {len(available)}/{len(dashboard_tables)}")
 
-    # Create SQLite
-    db_path = os.path.join(SCRIPT_DIR, f'{db_name}.db')
+    # SQLite Connection
+    # Robust path: use DB_DIR env (for Docker) or fallback to local sibling data/ folder
+    db_dir = os.environ.get('DB_DIR', os.path.abspath(os.path.join(SCRIPT_DIR, '..', 'data')))
+    db_path = os.path.join(db_dir, f'{db_name}.db')
+
     if os.path.exists(db_path):
         os.remove(db_path)
-        print(f"  Removed old: {db_name}.db")
+        print(f"  Removed old: {db_path}")
+
+    # Ensure the directory exists (important for Docker volumes)
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
     lite = sqlite3.connect(db_path)
     lc = lite.cursor()
