@@ -1,21 +1,9 @@
-# Stage 1: Build React Dashboard
-FROM node:20-alpine AS build
-
-WORKDIR /app
-
-# Copy dependencies and install
-COPY package*.json ./
-RUN npm install
-
-# Copy source and build
-COPY . .
-RUN npm run build
-
-# Stage 2: Serve using Nginx
+# Optimized Dockerfile for low-RAM server: 
+# Only serve the pre-built dist folder using Nginx
 FROM nginx:alpine
 
-# Copy built files
-COPY --from=build /app/dist /usr/share/nginx/html
+# Copy built files from the local dist/ folder (you must build locally first)
+COPY dist /usr/share/nginx/html
 
 # Copy custom nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf

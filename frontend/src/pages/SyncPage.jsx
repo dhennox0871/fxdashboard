@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { Box, Typography, Button, Paper, Alert, CircularProgress, Divider } from '@mui/material';
-import { Sync, CloudDownload, CheckCircle, Warning } from '@mui/icons-material';
+import Sync from '@mui/icons-material/Sync';
+import CloudDownload from '@mui/icons-material/CloudDownload';
+import CheckCircle from '@mui/icons-material/CheckCircle';
+import Warning from '@mui/icons-material/Warning';
 import { useAuth } from '../context/AuthContext';
 
 export default function SyncPage() {

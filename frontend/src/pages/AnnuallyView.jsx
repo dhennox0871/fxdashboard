@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Typography, CircularProgress, Alert, Grid, Button, Menu, MenuItem } from '@mui/material';
-import { CalendarToday, KeyboardArrowDown } from '@mui/icons-material';
+import CalendarToday from '@mui/icons-material/CalendarToday';
+import KeyboardArrowDown from '@mui/icons-material/KeyboardArrowDown';
 import DashboardCard from '../components/DashboardCard';
 import { useWidgetConfig } from '../context/WidgetConfigContext';
 import { useAuth } from '../context/AuthContext';

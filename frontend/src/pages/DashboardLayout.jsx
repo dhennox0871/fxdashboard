@@ -1,7 +1,12 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { AppBar, Toolbar, Typography, Drawer, List, ListItem, ListItemIcon, ListItemText, IconButton, Box, Divider } from '@mui/material';
-import { Menu, CalendarToday, InsertChart, Settings, Logout, Sync } from '@mui/icons-material';
+import Menu from '@mui/icons-material/Menu';
+import CalendarToday from '@mui/icons-material/CalendarToday';
+import InsertChart from '@mui/icons-material/InsertChart';
+import Settings from '@mui/icons-material/Settings';
+import Logout from '@mui/icons-material/Logout';
+import Sync from '@mui/icons-material/Sync';
 import { useAuth } from '../context/AuthContext';
 
 const drawerWidth = 240;
