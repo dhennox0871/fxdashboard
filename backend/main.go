@@ -54,6 +54,7 @@ func main() {
 	api.Get("/settings/company", GetCompanyInfo)
 	api.Get("/settings/last-sync", GetLastSync)
 	api.Post("/settings/sync", PostSync)
+	api.Post("/settings/sync/clear", ClearDatabase)
 
 	port := os.Getenv("PORT")
 	if port == "" {

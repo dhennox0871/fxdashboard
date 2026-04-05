@@ -1,16 +1,19 @@
-import React, { useState } from 'react';
-import { Box, Typography, Button, Paper, Alert, CircularProgress, Divider } from '@mui/material';
+import { useState } from 'react';
+import { Box, Typography, Button, Paper, Alert, CircularProgress, Divider, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
 import Sync from '@mui/icons-material/Sync';
 import CloudDownload from '@mui/icons-material/CloudDownload';
 import CheckCircle from '@mui/icons-material/CheckCircle';
 import Warning from '@mui/icons-material/Warning';
+import DeleteForever from '@mui/icons-material/DeleteForever';
 import { useAuth } from '../context/AuthContext';
 
 export default function SyncPage() {
   const { fetchWithAuth, user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [clearLoading, setClearLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [openConfirm, setOpenConfirm] = useState(false);
 
   const handleSync = async () => {
     setLoading(true);
@@ -25,6 +28,23 @@ export default function SyncPage() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleClear = async () => {
+    setClearLoading(true);
+    setOpenConfirm(false);
+    setResult(null);
+    setError(null);
+    try {
+      const res = await fetchWithAuth(`/api/settings/sync/clear`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal menghapus data');
+      setResult(data.message);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setClearLoading(false);
     }
   };
 
@@ -46,21 +66,34 @@ export default function SyncPage() {
           Tindakan ini akan menjalankan skrip migrasi di server untuk mengambil transaksi terbaru dari SQL Server. Proses ini mungkin memakan waktu beberapa detik hingga satu menit tergantung volume data.
         </Typography>
 
-        <Button
-          variant="contained"
-          size="large"
-          startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <CloudDownload />}
-          disabled={loading}
-          onClick={handleSync}
-          sx={{
-            py: 1.5, px: 4, borderRadius: 10, fontWeight: 'bold',
-            background: 'linear-gradient(135deg, #da8cff 0%, #9a55ff 100%)',
-            boxShadow: '0 8px 20px rgba(154, 85, 255, 0.3)',
-            '&:hover': { background: 'linear-gradient(135deg, #cc7ef0 0%, #8b48e3 100%)' }
-          }}
-        >
-          {loading ? 'Sedang Menyinkronkan...' : 'Mulai Sinkronisasi Sekarang'}
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+          <Button
+            variant="contained"
+            size="large"
+            startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <CloudDownload />}
+            disabled={loading || clearLoading}
+            onClick={handleSync}
+            sx={{
+              py: 1.5, px: 4, borderRadius: 10, fontWeight: 'bold',
+              background: 'linear-gradient(135deg, #da8cff 0%, #9a55ff 100%)',
+              boxShadow: '0 8px 20px rgba(154, 85, 255, 0.3)',
+              '&:hover': { background: 'linear-gradient(135deg, #cc7ef0 0%, #8b48e3 100%)' }
+            }}
+          >
+            {loading ? 'Menyinkronkan...' : 'Start Sync'}
+          </Button>
+
+          <Button
+            variant="outlined"
+            color="error"
+            startIcon={clearLoading ? <CircularProgress size={20} color="inherit" /> : <DeleteForever />}
+            disabled={loading || clearLoading}
+            onClick={() => setOpenConfirm(true)}
+            sx={{ borderRadius: 10, px: 3, fontWeight: 'bold' }}
+          >
+            Clear Data
+          </Button>
+        </Box>
 
         {result && (
           <Alert severity="success" icon={<CheckCircle />} sx={{ mt: 4, borderRadius: 2 }}>
@@ -78,6 +111,23 @@ export default function SyncPage() {
         <Typography variant="caption" color="textSecondary">
           Pastikan server dashboard memiliki konektivitas ODBC ke database SQL Server tujuan.
         </Typography>
+
+        {/* Confirmation Dialog */}
+        <Dialog open={openConfirm} onClose={() => setOpenConfirm(false)}>
+          <DialogTitle>Hapus Seluruh Data?</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              Tindakan ini akan menghapus semua data transaksi lokal untuk database <b>{user?.database}</b>. 
+              Gunakan fungsi ini jika Anda ingin melakukan penarikan data ulang secara penuh dari awal.
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions sx={{ p: 3 }}>
+            <Button onClick={() => setOpenConfirm(false)} color="inherit">Batal</Button>
+            <Button onClick={handleClear} color="error" variant="contained" autoFocus>
+              Ya, Hapus Semua Data
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Paper>
     </Box>
   );
