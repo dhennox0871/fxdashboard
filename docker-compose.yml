@@ -3,7 +3,12 @@ services:
     build: ./backend
     container_name: fx-backend
     volumes:
-      - ./data:/app/data # Tempat menyimpan database SQLite
+      - ./data:/app/data # Database SQLite
+      - ./backend/migrate_sksmrt.py:/app/migrate_sksmrt.py
+      - ./backend/migrate_to_sqlite.py:/app/migrate_to_sqlite.py
+      - ./backend/migrate_oslsrg_server.py:/app/migrate_oslsrg_server.py
+      - ./backend/verify_all.py:/app/verify_all.py
+      - ./backend/verify_sksmrt.py:/app/verify_sksmrt.py
     networks:
       - fxdb-net
     environment:

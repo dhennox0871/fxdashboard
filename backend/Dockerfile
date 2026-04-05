@@ -10,8 +10,8 @@ RUN apt-get update && apt-get install -y git
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
-COPY . .
+# Copy Go source code (no python scripts here for faster cache)
+COPY *.go ./
 
 # Build the application
 RUN go build -o main .

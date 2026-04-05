@@ -1,0 +1,16 @@
+.git
+.env
+*.db
+*.exe
+data/
+node_modules/
+test_build.exe
+migrate_sksmrt_output.txt
+verify_all_output.txt
+verify_output.txt
+sqlserver_report.md
+db_report.md
+full_dump.txt
+dump_utf8.txt
+schema_dump.txt
+*.log
