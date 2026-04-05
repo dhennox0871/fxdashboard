@@ -1,16 +1,13 @@
-FROM debian:bookworm-slim
+FROM python:3.11-slim
 
-# Install system dependencies (Python3 and SQL Server ODBC drivers)
+# Install system dependencies (SQL Server ODBC drivers)
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
     curl \
     gnupg2 \
     unixodbc \
     unixodbc-dev \
-    && curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
-    && curl https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-archive-keyring.gpg \
+    && echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft-archive-keyring.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
     && apt-get clean \
@@ -18,9 +15,9 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy python requirements and install (if any)
+# Copy python requirements and install
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt || true
+RUN pip install --no-cache-dir -r requirements.txt || true
 
 # Copy pre-built Go binary (compiled locally for Linux)
 COPY main .
