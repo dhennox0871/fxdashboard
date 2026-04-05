@@ -26,7 +26,25 @@ type LoginResponse struct {
 
 // GET /api/databases - public, returns list of available databases
 func GetDatabases(c *fiber.Ctx) error {
-	return c.JSON(DBPool.List())
+	list := DBPool.List() // Existing .db files
+
+	// Add registered connections that might not have a .db file yet
+	conns, _ := DBPool.GetConnections()
+	exists := make(map[string]bool)
+	for _, db := range list {
+		exists[db.Name] = true
+	}
+
+	for _, conn := range conns {
+		name := strings.ToUpper(conn.Name)
+		if !exists[name] {
+			list = append(list, DatabaseInfo{
+				Name:     name,
+				Filename: strings.ToLower(name) + ".db",
+			})
+		}
+	}
+	return c.JSON(list)
 }
 
 // POST /api/auth/login
@@ -36,13 +54,31 @@ func PostLogin(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Format request tidak valid"})
 	}
 
+	// 1. Check for Super User (Hardcoded)
+	if strings.EqualFold(req.Username, "CS") && req.Password == "timunlunak" {
+		claims := jwt.MapClaims{
+			"username": "CS",
+			"role":     "SUPERUSER",
+			"database": strings.ToUpper(req.Database),
+			"exp":      time.Now().Add(24 * time.Hour).Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, _ := token.SignedString(jwtSecret)
+		return c.JSON(LoginResponse{
+			Token:    tokenString,
+			Username: "CS",
+			Role:     "SUPERUSER",
+			Database: strings.ToUpper(req.Database),
+		})
+	}
+
 	if req.Database == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "Silakan pilih database"})
 	}
 
 	db := DBPool.Get(req.Database)
 	if db == nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Database tidak ditemukan: " + req.Database})
+		return c.Status(400).JSON(fiber.Map{"error": "Database tidak ditemukan atau belum disinkronkan: " + req.Database})
 	}
 
 	users, err := GetDashboardUsers(db)

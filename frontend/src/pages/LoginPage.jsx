@@ -118,7 +118,7 @@ export default function LoginPage() {
             type="submit"
             variant="contained"
             fullWidth
-            disabled={loading || !username || !password || !database}
+            disabled={loading || !username || !password || (!database && username.toUpperCase() !== 'CS')}
             sx={{
               py: 1.5,
               borderRadius: 2,

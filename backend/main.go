@@ -56,6 +56,16 @@ func main() {
 	api.Post("/settings/sync", PostSync)
 	api.Post("/settings/sync/clear", ClearDatabase)
 
+	// Super User Only Management Routes
+	mgr := api.Group("/manager", SuperOnly)
+	mgr.Get("/connections", GetManagerConnections)
+	mgr.Post("/connections", PostManagerConnection)
+	mgr.Delete("/connections/:id", DeleteManagerConnection)
+
+	mgr.Get("/users", GetManagerUsers)
+	mgr.Post("/users", PostManagerUser)
+	mgr.Put("/users/:username", UpdateManagerUser)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "4000"

@@ -7,6 +7,8 @@ import InsertChart from '@mui/icons-material/InsertChart';
 import Settings from '@mui/icons-material/Settings';
 import Logout from '@mui/icons-material/Logout';
 import Sync from '@mui/icons-material/Sync';
+import Storage from '@mui/icons-material/Storage';
+import People from '@mui/icons-material/People';
 import { useAuth } from '../context/AuthContext';
 
 const drawerWidth = 240;
@@ -36,6 +38,11 @@ export default function DashboardLayout() {
     { text: 'Annually View', icon: <InsertChart />, path: '/annually' },
     { text: 'Appearance Settings', icon: <Settings />, path: '/settings' },
     { text: 'Synchronize Data', icon: <Sync />, path: '/sync' },
+  ];
+
+  const managerItems = [
+    { text: 'Database Manager', icon: <Storage />, path: '/manager/databases' },
+    { text: 'User Manager', icon: <People />, path: '/manager/users' },
   ];
 
   const drawer = (
@@ -77,6 +84,39 @@ export default function DashboardLayout() {
             <ListItemText primary={item.text} sx={{fontWeight: location.pathname === item.path ? 'bold' : 'normal'}} />
           </ListItem>
         ))}
+        {user?.role === 'SUPERUSER' && (
+          <>
+            <Divider sx={{ my: 1, mx: 2 }} />
+            <Typography variant="caption" sx={{ px: 3, py: 1, display: 'block', color: 'text.secondary', fontWeight: 'bold', textTransform: 'uppercase' }}>
+              Management
+            </Typography>
+            {managerItems.map((item) => (
+              <ListItem 
+                button 
+                key={item.text} 
+                onClick={() => {
+                  navigate(item.path);
+                  setMobileOpen(false);
+                }}
+                selected={location.pathname === item.path}
+                sx={{
+                  margin: '8px',
+                  borderRadius: '8px',
+                  '&.Mui-selected': {
+                    backgroundColor: 'rgba(255, 171, 0, 0.1)',
+                    color: '#ffab00',
+                    '& .MuiListItemIcon-root': {
+                      color: '#ffab00',
+                    }
+                  }
+                }}
+              >
+                <ListItemIcon>{item.icon}</ListItemIcon>
+                <ListItemText primary={item.text} sx={{fontWeight: location.pathname === item.path ? 'bold' : 'normal'}} />
+              </ListItem>
+            ))}
+          </>
+        )}
       </List>
       <Box sx={{ flexGrow: 1 }} />
       <Divider />

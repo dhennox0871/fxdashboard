@@ -5,6 +5,8 @@ import AnnuallyView from './pages/AnnuallyView';
 import AppearanceSettings from './pages/AppearanceSettings';
 import LoginPage from './pages/LoginPage';
 import SyncPage from './pages/SyncPage';
+import DatabaseManager from './pages/DatabaseManager';
+import UserManager from './pages/UserManager';
 import { WidgetConfigProvider } from './context/WidgetConfigContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
@@ -26,6 +28,8 @@ function AppRoutes() {
           <Route path="annually" element={<AnnuallyView />} />
           <Route path="settings" element={<AppearanceSettings />} />
           <Route path="sync" element={<SyncPage />} />
+          <Route path="manager/databases" element={<DatabaseManager />} />
+          <Route path="manager/users" element={<UserManager />} />
         </Route>
         <Route path="*" element={<Navigate to="/daily" replace />} />
       </Routes>

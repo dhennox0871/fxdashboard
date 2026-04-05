@@ -22,6 +22,17 @@ type DatabasePool struct {
 	mu          sync.RWMutex
 	connections map[string]*sql.DB
 	dbDir       string
+	managerDB   *sql.DB
+}
+
+type ClientConnection struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Host     string `json:"host"`
+	DBName   string `json:"db_name"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Driver   string `json:"driver"`
 }
 
 type DatabaseInfo struct {
@@ -31,10 +42,28 @@ type DatabaseInfo struct {
 
 // InitPool scans the database directory for .db files
 func (p *DatabasePool) Init(dir string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.dbDir = dir
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("cannot create database directory '%s': %v", dir, err)
+	}
+
+	// Initialize manager.db
+	managerPath := filepath.Join(dir, "manager.db")
+	mdb, err := sql.Open("sqlite", managerPath)
+	if err == nil {
+		p.managerDB = mdb
+		p.managerDB.Exec(`CREATE TABLE IF NOT EXISTS connections (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE,
+			host TEXT,
+			db_name TEXT,
+			username TEXT,
+			password TEXT,
+			driver TEXT DEFAULT 'ODBC Driver 17 for SQL Server'
+		)`)
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -42,32 +71,49 @@ func (p *DatabasePool) Init(dir string) error {
 		return fmt.Errorf("cannot read database directory '%s': %v", dir, err)
 	}
 
-	count := 0
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".db") {
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".db") && entry.Name() != "manager.db" {
 			name := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
 			dbPath := filepath.Join(dir, entry.Name())
+			if _, exists := p.connections[strings.ToUpper(name)]; exists {
+				continue
+			}
 			db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 			if err != nil {
 				log.Printf("Warning: cannot open database '%s': %v", entry.Name(), err)
 				continue
 			}
-			if err := db.Ping(); err != nil {
-				log.Printf("Warning: cannot ping database '%s': %v", entry.Name(), err)
-				continue
-			}
 			p.connections[strings.ToUpper(name)] = db
-			count++
-			log.Printf("  Database loaded: %s (%s)", strings.ToUpper(name), entry.Name())
+			log.Printf("  Database loaded: %s", strings.ToUpper(name))
 		}
 	}
-
-	if count == 0 {
-		log.Printf("Warning: no .db files found in '%s'", dir)
-		return nil
-	}
-	log.Printf("Total databases loaded: %d", count)
 	return nil
+}
+
+// Reload re-scans the directory for new databases
+func (p *DatabasePool) Reload() error {
+	return p.Init(p.dbDir)
+}
+
+// GetConnections returns all registered SQL Server connections
+func (p *DatabasePool) GetConnections() ([]ClientConnection, error) {
+	if p.managerDB == nil {
+		return nil, fmt.Errorf("manager database not initialized")
+	}
+	rows, err := p.managerDB.Query("SELECT id, name, host, db_name, username, password, driver FROM connections")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []ClientConnection
+	for rows.Next() {
+		var c ClientConnection
+		if err := rows.Scan(&c.ID, &c.Name, &c.Host, &c.DBName, &c.Username, &c.Password, &c.Driver); err == nil {
+			list = append(list, c)
+		}
+	}
+	return list, nil
 }
 
 // Get returns a database connection by name
