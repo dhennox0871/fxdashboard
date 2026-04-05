@@ -106,16 +106,17 @@ lite = sqlite3.connect(db_path)
 lc = lite.cursor()
 print(f"SQLite database: {db_path}")
 
-# Drop tables to ensure fresh migration without deleting the file
+# Update tables to keep existing data
 lc.executescript("""
-DROP TABLE IF EXISTS logtrans;
-DROP TABLE IF EXISTS logtransline;
+-- Tables that we want to keep and sync incrementally
+-- logtrans, logtransline (no drop)
+
+-- Tables that we refresh every time (master data is usually small)
 DROP TABLE IF EXISTS masteritem;
 DROP TABLE IF EXISTS masteritemgroup;
 DROP TABLE IF EXISTS mastercostcenter;
 DROP TABLE IF EXISTS masterrepresentative;
 DROP TABLE IF EXISTS flexnotesetting;
-DROP TABLE IF EXISTS coreapplication;
 """)
 
 # ========== CREATE TABLES ==========
@@ -229,26 +230,35 @@ def migrate(table, actual_name, select_sql, insert_sql, params_count):
         rows = mc.fetchall()
         converted = [convert_row(row) for row in rows]
         if converted:
-            lc.executemany(insert_sql, converted)
+            # Use INSERT OR REPLACE to handle potential updates within the 180-day window
+            placeholders = ",".join(["?"] * params_count)
+            sql = insert_sql.replace("INSERT INTO", "INSERT OR REPLACE INTO")
+            lc.executemany(sql, converted)
             lite.commit()
-        print(f"  {table}: {len(rows)} rows migrated")
+        print(f"  {table}: {len(rows)} rows processed")
     except Exception as e:
         print(f"  ⚠️ {table}: ERROR - {e}")
 
-print("\nMigrating data...")
+# Check if we should do a full sync or 180-day sync
+lc.execute("SELECT COUNT(*) FROM logtrans")
+existing_rows = lc.fetchone()[0]
+sync_filter = "AND entrydate >= DATEADD(day, -180, GETDATE())" if existing_rows > 0 else ""
+
+if existing_rows == 0:
+    print("  First sync detected: Fetching ALL historical data...")
+else:
+    print(f"  Incremental sync: Fetching only last 180 days (existing: {existing_rows} rows)...")
 
 # logtrans
 if 'logtrans' in available_tables:
     actual = available_tables['logtrans']
-    # Filter only last 180 days to keep sync fast
-    print(f"  Filtering logtrans for last 180 days...")
     migrate('logtrans', actual,
         f"""SELECT logtransid, logtransentryno, 
            CONVERT(varchar, entrydate, 120) as entrydate,
            transtypeid, logtransentrytext, costcenterid, representativeid, createby
            FROM [{actual}] 
            WHERE transtypeid IN (10, 11, 18, 19) 
-           AND entrydate >= DATEADD(day, -180, GETDATE())""",
+           {sync_filter}""",
         "INSERT INTO logtrans VALUES (?,?,?,?,?,?,?,?)", 8)
 
 # logtransline (hanya transaksi penjualan)
@@ -260,7 +270,7 @@ if 'logtransline' in available_tables and 'logtrans' in available_tables:
            FROM [{actual_ltl}] ltl
            INNER JOIN [{actual_lt}] lt ON ltl.logtransid = lt.logtransid
            WHERE lt.transtypeid IN (10, 11, 18, 19)
-           AND lt.entrydate >= DATEADD(day, -180, GETDATE())""",
+           {sync_filter}""",
         "INSERT INTO logtransline VALUES (?,?,?,?,?)", 5)
 
 # masteritem
