@@ -11,9 +11,9 @@ import (
 
 // ClearDatabase deletes the SQLite database file for the current database context
 func ClearDatabase(c *fiber.Ctx) error {
-	dbName := c.Params("db")
-	if dbName == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "Database name is required"})
+	dbName, ok := c.Locals("database").(string)
+	if !ok || dbName == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Database name is required (context missing)"})
 	}
 
 	dbDir := os.Getenv("DB_DIR")
