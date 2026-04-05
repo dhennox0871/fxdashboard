@@ -131,7 +131,10 @@ CREATE TABLE IF NOT EXISTS logtrans (
     logtransentrytext TEXT,
     costcenterid INTEGER,
     representativeid INTEGER,
-    createby TEXT
+    createby TEXT,
+    clientname TEXT,
+    referenceno TEXT,
+    totalvalue REAL
 );
 
 -- logtransline (hanya kolom yang dipakai dashboard)
@@ -139,6 +142,11 @@ CREATE TABLE IF NOT EXISTS logtransline (
     logtranslineid INTEGER PRIMARY KEY,
     logtransid INTEGER,
     itemid INTEGER,
+    itemcode TEXT,
+    itemname TEXT,
+    quantity REAL,
+    uom TEXT,
+    price REAL,
     netvalue REAL,
     pajakvalue REAL
 );
@@ -255,23 +263,26 @@ if 'logtrans' in available_tables:
     migrate('logtrans', actual,
         f"""SELECT logtransid, logtransentryno, 
            CONVERT(varchar, entrydate, 120) as entrydate,
-           transtypeid, logtransentrytext, costcenterid, representativeid, createby
+           transtypeid, logtransentrytext, costcenterid, representativeid, createby,
+           clientname, referenceno, totalvalue
            FROM [{actual}] 
            WHERE transtypeid IN (10, 11, 18, 19) 
            {sync_filter}""",
-        "INSERT INTO logtrans VALUES (?,?,?,?,?,?,?,?)", 8)
+        "INSERT OR REPLACE INTO logtrans VALUES (?,?,?,?,?,?,?,?,?,?,?)", 11)
 
 # logtransline (hanya transaksi penjualan)
 if 'logtransline' in available_tables and 'logtrans' in available_tables:
     actual_ltl = available_tables['logtransline']
     actual_lt = available_tables['logtrans']
     migrate('logtransline', actual_ltl,
-        f"""SELECT ltl.logtranslineid, ltl.logtransid, ltl.itemid, ltl.netvalue, ltl.pajakvalue
+        f"""SELECT ltl.logtranslineid, ltl.logtransid, ltl.itemid, 
+           ltl.itemcode, ltl.itemname, ltl.quantity, ltl.uom, ltl.price,
+           ltl.netvalue, ltl.pajakvalue
            FROM [{actual_ltl}] ltl
            INNER JOIN [{actual_lt}] lt ON ltl.logtransid = lt.logtransid
            WHERE lt.transtypeid IN (10, 11, 18, 19)
            {sync_filter}""",
-        "INSERT INTO logtransline VALUES (?,?,?,?,?)", 5)
+        "INSERT OR REPLACE INTO logtransline VALUES (?,?,?,?,?,?,?,?,?,?)", 10)
 
 # masteritem
 if 'masteritem' in available_tables:
@@ -324,9 +335,11 @@ lc.execute("""
 """, ('DashboardAuth', 'DASHLOGIN', 'Dashboard Login', 'User credentials for Flexnote Dashboard', 'dashboard', 1, 88888, 1, 0, user_data, 1, 'SYSTEM', now_str, 'SYSTEM', now_str))
 
 # ========== INSERT LAST SYNC TIMESTAMP ==========
-from datetime import datetime
-sync_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-print(f"\nRecording last sync time: {sync_time} (flag=99999)...")
+from datetime import datetime, timezone, timedelta
+# Forced Asia/Jakarta (GMT+7)
+tz = timezone(timedelta(hours=7))
+sync_time = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+print(f"\nRecording last sync time (Jakarta): {sync_time} (flag=99999)...")
 lc.execute("DELETE FROM coreapplication WHERE flag = 99999")
 lc.execute("""
     INSERT INTO coreapplication 
