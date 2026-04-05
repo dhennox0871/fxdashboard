@@ -5,7 +5,7 @@ services:
     volumes:
       - ./data:/app/data # Tempat menyimpan database SQLite
     networks:
-      - density-net
+      - fxdb-net
     environment:
       - PORT=4000
       - DB_DIR=/app/data
@@ -17,11 +17,11 @@ services:
 #    ports:
 #      - "80:80"
     networks:
-      - density-net
+      - fxdb-net
     depends_on:
       - backend
     restart: always
 
 networks:
-  density-net:
+  fxdb-net:
     external: true # Pastikan network ini sudah dibuat di server

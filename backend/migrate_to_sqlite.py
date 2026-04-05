@@ -28,13 +28,24 @@ except:
 mc = mssql.cursor()
 print("Connected to SQL Server.")
 
+# Debugging path
+print(f"DEBUG: __file__ = {__file__}")
+print(f"DEBUG: CWD = {os.getcwd()}")
+print(f"DEBUG: DB_DIR environment = {os.environ.get('DB_DIR', 'NOT SET')}")
+
 # SQLite Connection
 # Robust path: use DB_DIR env (for Docker) or fallback to local sibling data/ folder
 db_dir = os.environ.get('DB_DIR', os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data')))
 db_path = os.path.join(db_dir, 'oslank.db')
 
+print(f"DEBUG: Target db_path = {db_path}")
+
 # Ensure the directory exists (important for Docker volumes)
-os.makedirs(os.path.dirname(db_path), exist_ok=True)
+try:
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    print(f"DEBUG: Directory verified/created: {os.path.dirname(db_path)}")
+except Exception as e:
+    print(f"DEBUG: Failed to create directory: {e}")
 
 lite = sqlite3.connect(db_path)
 lc = lite.cursor()
