@@ -46,6 +46,9 @@ func (p *DatabasePool) Init(dir string) error {
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".db") {
 			name := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+			if strings.ToUpper(name) == "MANAGER" {
+				continue
+			}
 			dbPath := filepath.Join(dir, entry.Name())
 			db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 			if err != nil {
