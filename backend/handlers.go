@@ -23,7 +23,7 @@ func GetDailyKPI(c *fiber.Ctx) error {
 	startStr, endStr := getDateRange(c)
 	q := `SELECT COALESCE(-SUM(ltl.netvalue + ltl.pajakvalue), 0), COUNT(DISTINCT lt.logtransid)
 		FROM logtrans lt JOIN logtransline ltl ON lt.logtransid = ltl.logtransid
-		WHERE lt.entrydate BETWEEN ? AND ? AND lt.transtypeid IN (10, 11, 18, 19)`
+		WHERE lt.entrydate BETWEEN ? AND ? AND lt.transtypeid IN (10, 11, 18, 19, 47)`
 	var res KPIResponse
 	err := db.QueryRow(q, startStr, endStr).Scan(&res.TotalSales, &res.TotalOrders)
 	if err != nil {
@@ -44,7 +44,7 @@ func GetDailyGroup(c *fiber.Ctx) error {
 		FROM logtrans JOIN logtransline ON logtrans.logtransid = logtransline.logtransid
 		JOIN masteritem ON logtransline.itemid = masteritem.itemid
 		JOIN masteritemgroup ON masteritem.itemgroupid = masteritemgroup.itemgroupid
-		WHERE logtrans.entrydate BETWEEN ? AND ? AND logtrans.transtypeid IN (10, 11, 18, 19)
+		WHERE logtrans.entrydate BETWEEN ? AND ? AND logtrans.transtypeid IN (10, 11, 18, 19, 47)
 		AND (masteritemgroup.description NOT LIKE '%bahan%' AND masteritemgroup.itemgroupcode <> 'UMUM')
 		GROUP BY masteritemgroup.itemgroupcode, masteritemgroup.description
 		HAVING -SUM(logtransline.netvalue + logtransline.pajakvalue) > 0
@@ -73,7 +73,7 @@ func GetDailyCostcenter(c *fiber.Ctx) error {
 	q := `SELECT mastercostcenter.description, COALESCE(-SUM(logtransline.netvalue + logtransline.pajakvalue), 0) as total
 		FROM logtrans JOIN logtransline ON logtrans.logtransid = logtransline.logtransid
 		JOIN mastercostcenter ON logtrans.costcenterid = mastercostcenter.costcenterid
-		WHERE logtrans.entrydate BETWEEN ? AND ? AND logtrans.transtypeid IN (10, 11, 18, 19)
+		WHERE logtrans.entrydate BETWEEN ? AND ? AND logtrans.transtypeid IN (10, 11, 18, 19, 47)
 		GROUP BY mastercostcenter.description ORDER BY total DESC`
 	rows, err := db.Query(q, startStr, endStr)
 	if err != nil {
@@ -100,7 +100,7 @@ func GetDailyChart(c *fiber.Ctx) error {
 		COALESCE(-SUM(CASE WHEN lt.transtypeid IN (18, 19) THEN (ltl.netvalue + ltl.pajakvalue) ELSE 0 END), 0) as tunai,
 		COALESCE(-SUM(CASE WHEN lt.transtypeid IN (10, 11) THEN (ltl.netvalue + ltl.pajakvalue) ELSE 0 END), 0) as kredit
 		FROM logtrans lt JOIN logtransline ltl ON lt.logtransid = ltl.logtransid
-		WHERE lt.entrydate BETWEEN ? AND ? AND lt.transtypeid IN (10, 11, 18, 19)
+		WHERE lt.entrydate BETWEEN ? AND ? AND lt.transtypeid IN (10, 11, 18, 19, 47)
 		GROUP BY DATE(lt.entrydate) ORDER BY tgl ASC`
 	rows, err := db.Query(q, startStr, endStr)
 	if err != nil {
@@ -125,7 +125,7 @@ func GetDailyCashier(c *fiber.Ctx) error {
 	startStr, endStr := getDateRange(c)
 	q := `SELECT createby, COALESCE(-SUM(logtransline.netvalue + logtransline.pajakvalue), 0) as total
 		FROM logtrans JOIN logtransline ON logtrans.logtransid = logtransline.logtransid
-		WHERE logtrans.entrydate BETWEEN ? AND ? AND logtrans.transtypeid IN (10, 11, 18, 19)
+		WHERE logtrans.entrydate BETWEEN ? AND ? AND logtrans.transtypeid IN (10, 11, 18, 19, 47)
 		GROUP BY createby ORDER BY total DESC`
 	rows, err := db.Query(q, startStr, endStr)
 	if err != nil {
@@ -152,7 +152,7 @@ func GetDailyRecent(c *fiber.Ctx) error {
 		COALESCE(-SUM(ltl.netvalue + ltl.pajakvalue), 0), lt.transtypeid
 		FROM logtrans lt JOIN masterrepresentative r ON lt.representativeid = r.representativeid
 		JOIN logtransline ltl ON lt.logtransid = ltl.logtransid
-		WHERE lt.entrydate BETWEEN ? AND ? AND lt.transtypeid IN (10, 11, 18, 19)
+		WHERE lt.entrydate BETWEEN ? AND ? AND lt.transtypeid IN (10, 11, 18, 19, 47)
 		GROUP BY lt.logtransid, lt.logtransentrytext, r.name, lt.entrydate, lt.transtypeid
 		ORDER BY lt.entrydate DESC LIMIT 10`
 	rows, err := db.Query(q, startStr, endStr)
