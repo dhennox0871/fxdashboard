@@ -8,6 +8,7 @@ import sqlite3
 import json
 import os
 import sys
+import argparse
 from decimal import Decimal
 
 SERVER = "oslsrg.flexnotesuite.com,18180"
@@ -80,7 +81,8 @@ def create_sqlite_tables(lc):
         logtransentrytext TEXT,
         costcenterid INTEGER,
         representativeid INTEGER,
-        createby TEXT
+        createby TEXT,
+        modifydate TEXT
     );
 
     CREATE TABLE IF NOT EXISTS logtransline (
@@ -186,15 +188,24 @@ def migrate_database(db_name):
     db_dir = os.environ.get('DB_DIR', os.path.abspath(os.path.join(SCRIPT_DIR, '..', 'data')))
     db_path = os.path.join(db_dir, f'{db_name}.db')
 
-    if os.path.exists(db_path):
-        os.remove(db_path)
-        print(f"  Removed old: {db_path}")
-
     # Ensure the directory exists (important for Docker volumes)
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
     lite = sqlite3.connect(db_path)
     lc = lite.cursor()
+
+    # Refresh dashboard tables in-place to avoid Windows file lock issue when server keeps DB open.
+    lc.executescript("""
+    DROP TABLE IF EXISTS logtrans;
+    DROP TABLE IF EXISTS logtransline;
+    DROP TABLE IF EXISTS masteritem;
+    DROP TABLE IF EXISTS masteritemgroup;
+    DROP TABLE IF EXISTS mastercostcenter;
+    DROP TABLE IF EXISTS masterrepresentative;
+    DROP TABLE IF EXISTS flexnotesetting;
+    DROP TABLE IF EXISTS coreapplication;
+    """)
+
     create_sqlite_tables(lc)
     print(f"  SQLite tables created")
 
@@ -208,9 +219,9 @@ def migrate_database(db_name):
                CONVERT(varchar, entrydate, 120) as entrydate,
                transtypeid, logtransentrytext, costcenterid, representativeid, createby
                FROM [{a}] 
-               WHERE transtypeid IN (10, 18)
+                    WHERE transtypeid IN (10, 11, 18, 19, 47)
                AND entrydate >= DATEADD(day, -180, GETDATE())""",
-            "INSERT INTO logtrans VALUES (?,?,?,?,?,?,?,?)")
+                "INSERT INTO logtrans (logtransid, logtransentryno, entrydate, transtypeid, logtransentrytext, costcenterid, representativeid, createby) VALUES (?,?,?,?,?,?,?,?)")
 
     if 'logtransline' in available and 'logtrans' in available:
         a_ltl = available['logtransline']
@@ -219,9 +230,9 @@ def migrate_database(db_name):
             f"""SELECT ltl.logtranslineid, ltl.logtransid, ltl.itemid, ltl.netvalue, ltl.pajakvalue
                FROM [{a_ltl}] ltl
                INNER JOIN [{a_lt}] lt ON ltl.logtransid = lt.logtransid
-               WHERE lt.transtypeid IN (10, 18)
+                    WHERE lt.transtypeid IN (10, 11, 18, 19, 47)
                AND lt.entrydate >= DATEADD(day, -180, GETDATE())""",
-            "INSERT INTO logtransline VALUES (?,?,?,?,?)")
+                "INSERT INTO logtransline VALUES (?,?,?,?,?)")
 
     if 'masteritem' in available:
         a = available['masteritem']
@@ -289,15 +300,24 @@ def migrate_database(db_name):
 
 
 # ========== MAIN ==========
+def parse_args():
+    parser = argparse.ArgumentParser(description="Migrate SQL Server to SQLite for selected databases.")
+    parser.add_argument("--database", choices=DATABASES, help="Run migration for only one database")
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
+    args = parse_args()
+    target_dbs = [args.database] if args.database else DATABASES
+
     print("=" * 60)
     print("  SQL Server -> SQLite3 Migration")
     print(f"  Server: {SERVER}")
-    print(f"  Databases: {', '.join(DATABASES)}")
+    print(f"  Databases: {', '.join(target_dbs)}")
     print("=" * 60)
 
     results = {}
-    for db_name in DATABASES:
+    for db_name in target_dbs:
         success = migrate_database(db_name)
         results[db_name] = success
 

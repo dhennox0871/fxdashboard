@@ -16,7 +16,10 @@ func GetAnnuallyKPI(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Database tidak tersedia"})
 	}
 	year := getYearParam(c)
-	q := `SELECT COALESCE(-SUM(ltl.netvalue + ltl.pajakvalue),0), COUNT(DISTINCT lt.logtransid)
+	q := `SELECT COALESCE(SUM(CASE 
+			WHEN lt.transtypeid IN (10, 11, 18, 19) THEN -(ltl.netvalue + ltl.pajakvalue) 
+			WHEN lt.transtypeid = 47 THEN (ltl.netvalue + ltl.pajakvalue) 
+			ELSE 0 END), 0), COUNT(DISTINCT lt.logtransid)
 		FROM logtrans lt JOIN logtransline ltl ON lt.logtransid = ltl.logtransid
 		WHERE strftime('%Y', lt.entrydate) = ? AND lt.transtypeid IN (10, 11, 18, 19, 47)`
 	var res KPIResponse
@@ -35,10 +38,13 @@ func GetAnnuallyChart(c *fiber.Ctx) error {
 	}
 	year := getYearParam(c)
 	q := `SELECT CAST(strftime('%m', lt.entrydate) AS INTEGER) as bln,
-		COALESCE(-SUM(ltl.netvalue + ltl.pajakvalue), 0) as total
+		COALESCE(SUM(CASE 
+			WHEN lt.transtypeid IN (10, 11, 18, 19) THEN -(ltl.netvalue + ltl.pajakvalue) 
+			WHEN lt.transtypeid = 47 THEN (ltl.netvalue + ltl.pajakvalue) 
+			ELSE 0 END), 0) as total
 		FROM logtrans lt JOIN logtransline ltl ON lt.logtransid = ltl.logtransid
 		WHERE strftime('%Y', lt.entrydate) = ? AND lt.transtypeid IN (10, 11, 18, 19, 47)
-		GROUP BY CAST(strftime('%m', lt.entrydate) AS INTEGER) ORDER BY bln ASC`
+		GROUP BY bln ORDER BY bln ASC`
 	rows, err := db.Query(q, year)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -75,7 +81,10 @@ func GetAnnuallyCashier(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Database tidak tersedia"})
 	}
 	year := getYearParam(c)
-	q := `SELECT createby, COALESCE(-SUM(logtransline.netvalue + logtransline.pajakvalue), 0) as total
+	q := `SELECT createby, COALESCE(SUM(CASE 
+			WHEN logtrans.transtypeid IN (10, 11, 18, 19) THEN -(logtransline.netvalue + logtransline.pajakvalue) 
+			WHEN logtrans.transtypeid = 47 THEN (logtransline.netvalue + logtransline.pajakvalue) 
+			ELSE 0 END), 0) as total
 		FROM logtrans JOIN logtransline ON logtrans.logtransid = logtransline.logtransid
 		WHERE strftime('%Y', logtrans.entrydate) = ? AND logtrans.transtypeid IN (10, 11, 18, 19, 47)
 		GROUP BY createby ORDER BY total DESC`

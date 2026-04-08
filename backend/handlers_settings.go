@@ -1,15 +1,263 @@
 package main
 
 import (
+	"bufio"
+	"fmt"
+	"io"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 type CompanyInfoResponse struct {
 	CompanyName string `json:"company_name"`
+}
+
+type SyncProgress struct {
+	Database       string    `json:"database"`
+	Running        bool      `json:"running"`
+	Percent        int       `json:"percent"`
+	CurrentStep    int       `json:"current_step"`
+	TotalSteps     int       `json:"total_steps"`
+	RemainingSteps int       `json:"remaining_steps"`
+	Message        string    `json:"message"`
+	Error          string    `json:"error,omitempty"`
+	StartedAt      time.Time `json:"started_at,omitempty"`
+	FinishedAt     time.Time `json:"finished_at,omitempty"`
+}
+
+var (
+	syncProgressMu   sync.RWMutex
+	syncProgressByDB = map[string]*SyncProgress{}
+)
+
+func setSyncProgress(dbName string, mutator func(*SyncProgress)) {
+	syncProgressMu.Lock()
+	defer syncProgressMu.Unlock()
+	state, ok := syncProgressByDB[dbName]
+	if !ok {
+		state = &SyncProgress{Database: strings.ToUpper(dbName), TotalSteps: 12}
+		syncProgressByDB[dbName] = state
+	}
+	mutator(state)
+	if state.TotalSteps <= 0 {
+		state.TotalSteps = 12
+	}
+	if state.CurrentStep < 0 {
+		state.CurrentStep = 0
+	}
+	if state.CurrentStep > state.TotalSteps {
+		state.CurrentStep = state.TotalSteps
+	}
+	state.RemainingSteps = state.TotalSteps - state.CurrentStep
+	if state.RemainingSteps < 0 {
+		state.RemainingSteps = 0
+	}
+	if state.Percent < 0 {
+		state.Percent = 0
+	}
+	if state.Percent > 100 {
+		state.Percent = 100
+	}
+}
+
+func getSyncProgress(dbName string) *SyncProgress {
+	syncProgressMu.RLock()
+	defer syncProgressMu.RUnlock()
+	state, ok := syncProgressByDB[dbName]
+	if !ok {
+		return nil
+	}
+	clone := *state
+	return &clone
+}
+
+func startSyncJob(dbName, script string, scriptArgs []string) error {
+	current := getSyncProgress(dbName)
+	if current != nil && current.Running {
+		return fmt.Errorf("Sinkronisasi masih berjalan untuk database %s", strings.ToUpper(dbName))
+	}
+
+	setSyncProgress(dbName, func(s *SyncProgress) {
+		s.Database = strings.ToUpper(dbName)
+		s.Running = true
+		s.Percent = 8
+		s.CurrentStep = 1
+		s.TotalSteps = 12
+		s.Message = "Memulai proses sinkronisasi..."
+		s.Error = ""
+		s.StartedAt = time.Now()
+		s.FinishedAt = time.Time{}
+	})
+
+	pythonCmd, preArgs, err := resolvePythonCommand()
+	if err != nil {
+		setSyncProgress(dbName, func(s *SyncProgress) {
+			s.Running = false
+			s.Error = err.Error()
+			s.Message = "Gagal memulai sinkronisasi"
+			s.FinishedAt = time.Now()
+		})
+		return err
+	}
+
+	go func() {
+		cmdArgs := append([]string{}, preArgs...)
+		cmdArgs = append(cmdArgs, script)
+		cmdArgs = append(cmdArgs, scriptArgs...)
+
+		cmd := exec.Command(pythonCmd, cmdArgs...)
+		cmd.Dir = "."
+
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			setSyncProgress(dbName, func(s *SyncProgress) {
+				s.Running = false
+				s.Error = "Gagal membuka output sinkronisasi"
+				s.Message = "Sinkronisasi gagal"
+				s.FinishedAt = time.Now()
+			})
+			return
+		}
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			setSyncProgress(dbName, func(s *SyncProgress) {
+				s.Running = false
+				s.Error = "Gagal membuka error stream sinkronisasi"
+				s.Message = "Sinkronisasi gagal"
+				s.FinishedAt = time.Now()
+			})
+			return
+		}
+
+		if err := cmd.Start(); err != nil {
+			setSyncProgress(dbName, func(s *SyncProgress) {
+				s.Running = false
+				s.Error = "Gagal menjalankan skrip sinkronisasi: " + err.Error()
+				s.Message = "Sinkronisasi gagal"
+				s.FinishedAt = time.Now()
+			})
+			return
+		}
+
+		setSyncProgress(dbName, func(s *SyncProgress) {
+			s.Message = "Skrip sinkronisasi sedang berjalan..."
+		})
+
+		var wg sync.WaitGroup
+		consume := func(r io.Reader) {
+			defer wg.Done()
+			scanner := bufio.NewScanner(r)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if line == "" {
+					continue
+				}
+				step := detectSyncStep(line)
+				setSyncProgress(dbName, func(s *SyncProgress) {
+					if step > s.CurrentStep {
+						s.CurrentStep = step
+						s.Percent = (s.CurrentStep * 100) / s.TotalSteps
+					}
+					s.Message = line
+				})
+			}
+		}
+
+		wg.Add(2)
+		go consume(stdout)
+		go consume(stderr)
+
+		err = cmd.Wait()
+		wg.Wait()
+
+		if err != nil {
+			setSyncProgress(dbName, func(s *SyncProgress) {
+				s.Running = false
+				s.Error = "Sinkronisasi gagal: " + err.Error()
+				s.Message = "Sinkronisasi gagal"
+				s.FinishedAt = time.Now()
+			})
+			return
+		}
+
+		setSyncProgress(dbName, func(s *SyncProgress) {
+			s.Running = false
+			s.CurrentStep = s.TotalSteps
+			s.Percent = 100
+			s.Message = "Sinkronisasi selesai"
+			s.Error = ""
+			s.FinishedAt = time.Now()
+		})
+	}()
+
+	return nil
+}
+
+func detectSyncStep(line string) int {
+	text := strings.ToLower(line)
+	switch {
+	case strings.Contains(text, "connected with driver") || strings.Contains(text, "connected with:"):
+		return 2
+	case strings.Contains(text, "checking available tables"):
+		return 3
+	case strings.Contains(text, "tables found:"):
+		return 3
+	case strings.Contains(text, "tables created"):
+		return 4
+	case strings.Contains(text, "logtrans:") && (strings.Contains(text, "rows processed") || strings.Contains(text, " rows")):
+		return 5
+	case strings.Contains(text, "logtransline:") && (strings.Contains(text, "rows processed") || strings.Contains(text, " rows")):
+		return 6
+	case strings.Contains(text, "masteritem:") && (strings.Contains(text, "rows processed") || strings.Contains(text, " rows")):
+		return 7
+	case strings.Contains(text, "masteritemgroup:") && (strings.Contains(text, "rows processed") || strings.Contains(text, " rows")):
+		return 8
+	case strings.Contains(text, "mastercostcenter:") && (strings.Contains(text, "rows processed") || strings.Contains(text, " rows")):
+		return 9
+	case strings.Contains(text, "masterrepresentative:") && (strings.Contains(text, "rows processed") || strings.Contains(text, " rows")):
+		return 10
+	case strings.Contains(text, "flexnotesetting:") && (strings.Contains(text, "rows processed") || strings.Contains(text, " rows")):
+		return 11
+	case strings.Contains(text, "migration complete") || strings.Contains(text, " done:"):
+		return 12
+	default:
+		return 0
+	}
+}
+
+func resolvePythonCommand() (string, []string, error) {
+	type candidate struct {
+		name    string
+		preArgs []string
+	}
+
+	candidates := []candidate{
+		{name: "python"},
+		{name: "python3"},
+		{name: "py", preArgs: []string{"-3"}},
+		{name: "C:/Program Files/Python312/python.exe"},
+	}
+
+	for _, c := range candidates {
+		if strings.Contains(c.name, "/") || strings.Contains(c.name, "\\") {
+			if _, err := os.Stat(c.name); err == nil {
+				return c.name, c.preArgs, nil
+			}
+			continue
+		}
+
+		if resolved, err := exec.LookPath(c.name); err == nil {
+			return resolved, c.preArgs, nil
+		}
+	}
+
+	return "", nil, fmt.Errorf("Python interpreter tidak ditemukan (python/python3/py)")
 }
 
 func GetCompanyInfo(c *fiber.Ctx) error {
@@ -36,45 +284,51 @@ func PostSync(c *fiber.Ctx) error {
 
 	dbName = strings.ToLower(dbName)
 	var script string
+	args := []string{}
 	switch dbName {
 	case "oslank":
 		script = "migrate_to_sqlite.py"
 	case "sksmrt":
 		script = "migrate_sksmrt.py"
+		args = append(args, "--mode", "incremental")
 	case "oslsrg":
 		script = "migrate_oslsrg_server.py"
+		args = append(args, "--database", "oslsrg")
 	default:
 		return c.Status(400).JSON(fiber.Map{"error": "Skrip sinkronisasi tidak ditemukan untuk database ini"})
 	}
 
-	log.Printf("Starting sync for %s using %s", dbName, script)
-	
-	// Execute the python3 script
-	cmd := exec.Command("python3", script)
-	cmd.Dir = "." // Ensure it runs in the backend dir
-	output, err := cmd.CombinedOutput()
-	
-	outputStr := string(output)
-	if err != nil {
-		log.Printf("Sync failed for %s: %v\nOutput: %s", dbName, err, outputStr)
-		
-		// Return the output in the error message so it's visible in the UI
-		msg := "Gagal menjalankan sinkronisasi: " + err.Error()
-		if outputStr != "" {
-			msg += " | Detail: " + outputStr
-		}
-		
-		return c.Status(500).JSON(fiber.Map{
-			"error": msg,
+	log.Printf("Starting async sync for %s using %s %v", dbName, script, args)
+
+	if err := startSyncJob(dbName, script, args); err != nil {
+		return c.Status(409).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Sinkronisasi dimulai untuk " + dbName,
+		"running": true,
+	})
+}
+
+func GetSyncStatus(c *fiber.Ctx) error {
+	dbName, ok := c.Locals("database").(string)
+	if !ok || dbName == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Database tidak terpilih"})
+	}
+
+	dbName = strings.ToLower(dbName)
+	state := getSyncProgress(dbName)
+	if state == nil {
+		return c.JSON(fiber.Map{
+			"database":        strings.ToUpper(dbName),
+			"running":         false,
+			"percent":         0,
+			"current_step":    0,
+			"total_steps":     12,
+			"remaining_steps": 12,
+			"message":         "Belum ada proses sinkronisasi",
 		})
 	}
 
-	log.Printf("Sync success for %s", dbName)
-	
-	// Re-initialize the pool to reload the DB? 
-	// DBPool.Init(os.Getenv("DB_DIR")) // Optional, normally not needed if using the same file
-
-	return c.JSON(fiber.Map{
-		"message": "Sinkronisasi berhasil untuk " + dbName,
-	})
+	return c.JSON(state)
 }

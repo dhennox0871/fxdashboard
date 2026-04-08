@@ -127,6 +127,13 @@ export default function DashboardCard({ config, data, nameKey, valKey }) {
 
   const renderAreaChart = () => {
     const chartData = Array.isArray(data) ? data : [];
+    const xAxisKey = chartData.length > 0
+      ? (chartData[0].tgl !== undefined ? 'tgl' : (chartData[0].name !== undefined ? 'name' : 'bulan'))
+      : 'tgl';
+    const xTickFormatter = (v) => {
+      if (xAxisKey === 'tgl') return v ? v.substring(5, 10) : '';
+      return v ?? '';
+    };
     return (
       <Paper sx={{ p: 3.5, borderRadius: '10px', mb: 3, boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
@@ -161,7 +168,7 @@ export default function DashboardCard({ config, data, nameKey, valKey }) {
                   <stop offset="95%" stopColor={cTheme.end} stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <XAxis dataKey="tgl" axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#aaa'}} tickFormatter={(v) => v ? v.substring(5, 10) : ''} />
+              <XAxis dataKey={xAxisKey} axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#aaa'}} tickFormatter={xTickFormatter} />
               <Tooltip formatter={(value) => formatCurrency(value)} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 14px rgba(0,0,0,0.1)'}} />
               {chartData.length > 0 && chartData[0].kredit !== undefined ? (
                 <>

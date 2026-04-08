@@ -14,6 +14,11 @@ docker-compose.override.yml
 # backend/sksmrt.db*
 # backend/oslsrg.db*
 # backend/oslken.db*
+data/sksmrt.db
+data/SKSMRT.db
+data/*.db-shm
+data/*.db-wal
+data/*.db-journal
 
 # Go
 backend/test_build.exe

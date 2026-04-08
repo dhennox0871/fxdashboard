@@ -4,7 +4,7 @@ import json
 import os
 import sys
 from decimal import Decimal
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 # --- SQL Server Connection Config ---
 SERVER = "idtemp.flexnotesuite.com,18180"
@@ -84,8 +84,17 @@ class UniversalMigrator:
                 self.source_columns[table] = []
 
     def setup_schema(self):
-        self.lc.executescript("""
-        CREATE TABLE IF NOT EXISTS logtrans (
+        cur = self.lc
+        # Force a clean sync by dropping old tables if they exist
+        cur.execute("DROP TABLE IF EXISTS logtrans")
+        cur.execute("DROP TABLE IF EXISTS logtransline")
+        cur.execute("DROP TABLE IF EXISTS masteritem")
+        cur.execute("DROP TABLE IF EXISTS masteritemgroup")
+        cur.execute("DROP TABLE IF EXISTS mastercostcenter")
+        cur.execute("DROP TABLE IF EXISTS masterrepresentative")
+        cur.execute("DROP TABLE IF EXISTS coreapplication")
+
+        cur.execute("""CREATE TABLE logtrans (
             logtransid INTEGER PRIMARY KEY,
             logtransentryno TEXT,
             entrydate TEXT,
@@ -97,36 +106,67 @@ class UniversalMigrator:
             clientname TEXT,
             referenceno TEXT,
             totalvalue REAL
-        );
-        CREATE TABLE IF NOT EXISTS logtransline (
+        )""")
+        cur.execute("""CREATE TABLE logtransline (
             logtranslineid INTEGER PRIMARY KEY,
             logtransid INTEGER,
             itemid INTEGER,
-            itemcode TEXT,
-            itemname TEXT,
-            quantity REAL,
-            uom TEXT,
+            qty INTEGER,
             price REAL,
             netvalue REAL,
             pajakvalue REAL
-        );
-        CREATE INDEX IF NOT EXISTS idx_logtrans_entrydate ON logtrans(entrydate);
-        CREATE INDEX IF NOT EXISTS idx_logtrans_transtypeid ON logtrans(transtypeid);
-        CREATE INDEX IF NOT EXISTS idx_logtransline_logtransid ON logtransline(logtransid);
-        """)
+        )""")
+        # Master Tables
+        cur.execute("CREATE TABLE masteritem (itemid INTEGER PRIMARY KEY, itemgroupid INTEGER, itemcode TEXT, itemname TEXT)")
+        cur.execute("CREATE TABLE masteritemgroup (itemgroupid INTEGER PRIMARY KEY, itemgroupcode TEXT, description TEXT)")
+        cur.execute("CREATE TABLE mastercostcenter (costcenterid INTEGER PRIMARY KEY, costcentercode TEXT, description TEXT)")
+        cur.execute("CREATE TABLE masterrepresentative (representativeid INTEGER PRIMARY KEY, representativecode TEXT, name TEXT)")
+        cur.execute("CREATE TABLE coreapplication (flag INTEGER PRIMARY KEY, data TEXT)")
+        
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_lt_date ON logtrans(entrydate)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_lt_type ON logtrans(transtypeid)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_ltl_id ON logtransline(logtransid)")
         self.lite.commit()
 
-    def get_col_sql(self, table, logical_name, candidates, default="NULL"):
-        cols = self.source_columns[table]
-        for c in candidates:
-            # If candidate is a direct column name
-            if c.lower() in cols:
-                return c
-            # Simple handling of cast and ltl. prefixes
-            clean_c = c.split(".")[-1] if "." in c else c
-            if clean_c.lower() in cols:
-                return c
-        return default
+    def migrate_masters(self):
+        print(f"[{self.target_db_name}] Synchronizing master tables...")
+        masters = {
+            "masteritemgroup": ["itemgroupid", "itemgroupcode", "description"],
+            "mastercostcenter": ["costcenterid", "costcentercode", "description"],
+            "masterrepresentative": ["representativeid", "representativecode", "name"],
+            "masteritem": ["itemid", "itemgroupid", "itemcode", "itemname"]
+        }
+        
+        for table, cols in masters.items():
+            # Get actual columns in MSSQL to handle fallback (like itemname vs description)
+            try:
+                self.mc.execute(f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table}'")
+                ms_cols = [r[0].lower() for r in self.mc.fetchall()]
+                
+                p_select = []
+                for c in cols:
+                    if c in ms_cols:
+                        p_select.append(c)
+                    elif c == "itemname" and "description" in ms_cols:
+                        p_select.append("description as itemname")
+                    elif c == "itemname" and "name" in ms_cols:
+                        p_select.append("name as itemname")
+                    else:
+                        p_select.append(f"NULL as {c}")
+                
+                select_sql = f"SELECT {', '.join(p_select)} FROM {table}"
+                self.mc.execute(select_sql)
+                rows = self.mc.fetchall()
+                
+                placeholders = ", ".join(["?"] * len(cols))
+                insert_sql = f"INSERT OR REPLACE INTO {table} ({', '.join(cols)}) VALUES ({placeholders})"
+                
+                self.lc.executemany(insert_sql, [tuple(r) for r in rows])
+                print(f"  - {table}: {len(rows)} rows synced.")
+            except Exception as e:
+                print(f"  Warning: Skipping master table {table}: {e}")
+            
+        self.lite.commit()
 
     def migrate_chunked_logtrans(self):
         print(f"      Syncing logtrans (Full: {self.is_full_sync})...")
@@ -194,8 +234,6 @@ class UniversalMigrator:
             print(f"      Finished logtrans: {total_migrated} rows synced.")
         except Exception as e:
             print(f"\n      [ERROR] logtrans in {self.target_db_name}: {e}")
-            import traceback
-            traceback.print_exc()
 
     def migrate_chunked_logtransline(self):
         print(f"      Syncing logtransline for {self.target_db_name} (Full: {self.is_full_sync})...")
@@ -222,10 +260,7 @@ class UniversalMigrator:
             cols = self.source_columns["logtransline"]
             p_select = [
                 "ltl.logtranslineid", "ltl.logtransid", "ltl.itemid",
-                "ltl.itemcode" if "itemcode" in cols else ("ltl.itemcoderef" if "itemcoderef" in cols else ("ltl.syncitemcode" if "syncitemcode" in cols else "NULL")),
-                "ltl.itemname" if "itemname" in cols else ("ltl.description" if "description" in cols else "'Unknown Item'"),
                 "ltl.quantity" if "quantity" in cols else ("ltl.qty" if "qty" in cols else ("ltl.qtyinput" if "qtyinput" in cols else "0")),
-                "ltl.uom" if "uom" in cols else ("CAST(ltl.uomid AS VARCHAR)" if "uomid" in cols else "NULL"),
                 "ltl.price" if "price" in cols else ("ltl.priceinput" if "priceinput" in cols else "0"),
                 "ltl.netvalue" if "netvalue" in cols else ("ltl.netvalueinput" if "netvalueinput" in cols else "0"),
                 "ltl.pajakvalue" if "pajakvalue" in cols else "0"
@@ -249,8 +284,8 @@ class UniversalMigrator:
                 
                 if converted:
                     self.lc.executemany("""INSERT OR REPLACE INTO logtransline
-                        (logtranslineid, logtransid, itemid, itemcode, itemname, quantity, uom, price, netvalue, pajakvalue)
-                        VALUES (?,?,?,?,?,?,?,?,?,?)""", converted)
+                        (logtranslineid, logtransid, itemid, qty, price, netvalue, pajakvalue)
+                        VALUES (?,?,?,?,?,?,?)""", converted)
                     self.lite.commit()
                     total_migrated += len(rows)
                 
@@ -259,8 +294,6 @@ class UniversalMigrator:
             print(f"\n      Finished logtransline: {total_migrated} rows synced.")
         except Exception as e:
             print(f"\n      [ERROR] logtransline in {self.target_db_name}: {e}")
-            import traceback
-            traceback.print_exc()
 
     def finalize(self):
         if self.mssql: self.mssql.close()
@@ -270,6 +303,7 @@ def run_sync(db_name, is_full=False):
     migrator = UniversalMigrator(db_name, is_full)
     if migrator.connect():
         migrator.setup_schema()
+        migrator.migrate_masters()
         migrator.migrate_chunked_logtrans()
         migrator.migrate_chunked_logtransline()
         migrator.finalize()

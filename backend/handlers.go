@@ -21,7 +21,10 @@ func GetDailyKPI(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Database tidak tersedia"})
 	}
 	startStr, endStr := getDateRange(c)
-	q := `SELECT COALESCE(-SUM(ltl.netvalue + ltl.pajakvalue), 0), COUNT(DISTINCT lt.logtransid)
+	q := `SELECT COALESCE(SUM(CASE 
+			WHEN lt.transtypeid IN (10, 11, 18, 19) THEN -(ltl.netvalue + ltl.pajakvalue) 
+			WHEN lt.transtypeid = 47 THEN (ltl.netvalue + ltl.pajakvalue) 
+			ELSE 0 END), 0), COUNT(DISTINCT lt.logtransid)
 		FROM logtrans lt JOIN logtransline ltl ON lt.logtransid = ltl.logtransid
 		WHERE lt.entrydate BETWEEN ? AND ? AND lt.transtypeid IN (10, 11, 18, 19, 47)`
 	var res KPIResponse
@@ -97,8 +100,8 @@ func GetDailyChart(c *fiber.Ctx) error {
 	}
 	startStr, endStr := getDateRange(c)
 	q := `SELECT DATE(lt.entrydate) as tgl,
-		COALESCE(-SUM(CASE WHEN lt.transtypeid IN (18, 19) THEN (ltl.netvalue + ltl.pajakvalue) ELSE 0 END), 0) as tunai,
-		COALESCE(-SUM(CASE WHEN lt.transtypeid IN (10, 11) THEN (ltl.netvalue + ltl.pajakvalue) ELSE 0 END), 0) as kredit
+		COALESCE(SUM(CASE WHEN lt.transtypeid IN (18, 19) THEN -(ltl.netvalue + ltl.pajakvalue) ELSE 0 END), 0) as tunai,
+		COALESCE(SUM(CASE WHEN lt.transtypeid IN (10, 11) THEN -(ltl.netvalue + ltl.pajakvalue) WHEN lt.transtypeid = 47 THEN (ltl.netvalue + ltl.pajakvalue) ELSE 0 END), 0) as kredit
 		FROM logtrans lt JOIN logtransline ltl ON lt.logtransid = ltl.logtransid
 		WHERE lt.entrydate BETWEEN ? AND ? AND lt.transtypeid IN (10, 11, 18, 19, 47)
 		GROUP BY DATE(lt.entrydate) ORDER BY tgl ASC`

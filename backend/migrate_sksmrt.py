@@ -9,6 +9,7 @@ import sqlite3
 import json
 import os
 import sys
+import argparse
 from decimal import Decimal
 
 # --- SQL Server Connection ---
@@ -38,18 +39,40 @@ for driver in drivers:
     try:
         print(f"Trying driver: {driver} ...")
         mssql = pyodbc.connect(conn_str)
-        print(f"✅ Connected with driver: {driver}")
+        print(f"[OK] Connected with driver: {driver}")
         break
     except pyodbc.Error as e:
-        print(f"  ❌ Failed: {e}")
+        print(f"  [FAILED] {e}")
         continue
 
 if mssql is None:
-    print("\n❌ GAGAL: Tidak bisa connect ke SQL Server.")
+    print("\n[ERROR] GAGAL: Tidak bisa connect ke SQL Server.")
     print("   Pastikan ODBC driver terinstall dan server reachable.")
     sys.exit(1)
 
 mc = mssql.cursor()
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Migrate SKSMRT SQL Server data to SQLite."
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["full", "incremental"],
+        default="full",
+        help="full: pull data from 2024-01-01 (entrydate). incremental: pull last 180 days by modifydate.",
+    )
+    return parser.parse_args()
+
+
+args = parse_args()
+is_incremental = args.mode == "incremental"
+
+if is_incremental:
+    print("\n=== Mode: INCREMENTAL (modifydate >= GETDATE()-180) ===")
+else:
+    print("\n=== Mode: FULL-LIMITED (entrydate >= 2024-01-01) ===")
 
 # --- First, inspect available tables ---
 print("\n=== Checking available tables ===")
@@ -75,12 +98,12 @@ for tbl in dashboard_tables:
         mc.execute(f"SELECT COUNT(*) FROM [{matched[0]}]")
         count = mc.fetchone()[0]
         available_tables[tbl] = matched[0]  # store actual name
-        print(f"  ✅ {tbl}: {count} rows")
+        print(f"  [OK] {tbl}: {count} rows")
     else:
-        print(f"  ❌ {tbl}: NOT FOUND")
+        print(f"  [NOT FOUND] {tbl}")
 
 if not available_tables:
-    print("\n❌ Tidak ada tabel dashboard yang ditemukan!")
+    print("\n[ERROR] Tidak ada tabel dashboard yang ditemukan!")
     sys.exit(1)
 
 # Debugging path
@@ -106,18 +129,29 @@ lite = sqlite3.connect(db_path)
 lc = lite.cursor()
 print(f"SQLite database: {db_path}")
 
-# Update tables to keep existing data
-lc.executescript("""
--- Tables that we want to keep and sync incrementally
--- logtrans, logtransline (no drop)
-
--- Tables that we refresh every time (master data is usually small)
-DROP TABLE IF EXISTS masteritem;
-DROP TABLE IF EXISTS masteritemgroup;
-DROP TABLE IF EXISTS mastercostcenter;
-DROP TABLE IF EXISTS masterrepresentative;
-DROP TABLE IF EXISTS flexnotesetting;
-""")
+# Update tables according to mode
+if is_incremental:
+    # Incremental mode keeps transaction tables and upserts only changed rows.
+    lc.executescript("""
+    DROP TABLE IF EXISTS masteritem;
+    DROP TABLE IF EXISTS masteritemgroup;
+    DROP TABLE IF EXISTS mastercostcenter;
+    DROP TABLE IF EXISTS masterrepresentative;
+    DROP TABLE IF EXISTS flexnotesetting;
+    DROP TABLE IF EXISTS coreapplication;
+    """)
+else:
+    # Full-limited mode rebuilds all dashboard tables so dataset is strictly >= 2024-01-01.
+    lc.executescript("""
+    DROP TABLE IF EXISTS logtrans;
+    DROP TABLE IF EXISTS logtransline;
+    DROP TABLE IF EXISTS masteritem;
+    DROP TABLE IF EXISTS masteritemgroup;
+    DROP TABLE IF EXISTS mastercostcenter;
+    DROP TABLE IF EXISTS masterrepresentative;
+    DROP TABLE IF EXISTS flexnotesetting;
+    DROP TABLE IF EXISTS coreapplication;
+    """)
 
 # ========== CREATE TABLES ==========
 
@@ -132,9 +166,7 @@ CREATE TABLE IF NOT EXISTS logtrans (
     costcenterid INTEGER,
     representativeid INTEGER,
     createby TEXT,
-    clientname TEXT,
-    referenceno TEXT,
-    totalvalue REAL
+    modifydate TEXT
 );
 
 -- logtransline (hanya kolom yang dipakai dashboard)
@@ -142,11 +174,6 @@ CREATE TABLE IF NOT EXISTS logtransline (
     logtranslineid INTEGER PRIMARY KEY,
     logtransid INTEGER,
     itemid INTEGER,
-    itemcode TEXT,
-    itemname TEXT,
-    quantity REAL,
-    uom TEXT,
-    price REAL,
     netvalue REAL,
     pajakvalue REAL
 );
@@ -187,26 +214,8 @@ CREATE TABLE IF NOT EXISTS flexnotesetting (
 -- coreapplication (untuk login)
 CREATE TABLE IF NOT EXISTS coreapplication (
     coreapplicationid INTEGER PRIMARY KEY AUTOINCREMENT,
-    classname TEXT NOT NULL DEFAULT '',
-    dataid TEXT NOT NULL DEFAULT '',
-    title TEXT,
-    description TEXT,
-    category TEXT,
-    enabled INTEGER NOT NULL DEFAULT 1,
     flag INTEGER NOT NULL DEFAULT 0,
-    majorversion INTEGER NOT NULL DEFAULT 0,
-    minorversion INTEGER NOT NULL DEFAULT 0,
-    data TEXT,
-    visible INTEGER,
-    dataformat INTEGER,
-    datatype INTEGER,
-    reservedint1 INTEGER,
-    reservedtext1 TEXT,
-    reserveddatetime1 TEXT,
-    createby TEXT NOT NULL DEFAULT '',
-    createdate TEXT NOT NULL DEFAULT '',
-    modifyby TEXT NOT NULL DEFAULT '',
-    modifydate TEXT NOT NULL DEFAULT ''
+    data TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_logtrans_entrydate ON logtrans(entrydate);
@@ -215,6 +224,14 @@ CREATE INDEX IF NOT EXISTS idx_logtransline_logtransid ON logtransline(logtransi
 CREATE INDEX IF NOT EXISTS idx_logtransline_itemid ON logtransline(itemid);
 CREATE INDEX IF NOT EXISTS idx_coreapplication_flag ON coreapplication(flag);
 """)
+
+# Ensure logtrans has modifydate column
+try:
+    lc.execute("ALTER TABLE logtrans ADD COLUMN modifydate TEXT")
+    print("Added modifydate column to logtrans")
+except Exception:
+    pass
+
 print("Tables created.")
 
 # ========== MIGRATE DATA ==========
@@ -245,17 +262,17 @@ def migrate(table, actual_name, select_sql, insert_sql, params_count):
             lite.commit()
         print(f"  {table}: {len(rows)} rows processed")
     except Exception as e:
-        print(f"  ⚠️ {table}: ERROR - {e}")
+        print(f"  [WARN] {table}: ERROR - {e}")
 
-# Check if we should do a full sync or 180-day sync
-lc.execute("SELECT COUNT(*) FROM logtrans")
-existing_rows = lc.fetchone()[0]
-sync_filter = "AND entrydate >= DATEADD(day, -180, GETDATE())" if existing_rows > 0 else ""
-
-if existing_rows == 0:
-    print("  First sync detected: Fetching ALL historical data...")
+# Build filter based on mode
+if is_incremental:
+    print("  Filtering data modified in the last 180 days...")
+    logtrans_filter = "AND modifydate >= DATEADD(day, -180, GETDATE())"
+    logtransline_filter = "AND lt.modifydate >= DATEADD(day, -180, GETDATE())"
 else:
-    print(f"  Incremental sync: Fetching only last 180 days (existing: {existing_rows} rows)...")
+    print("  Filtering data from 2024-01-01 and newer...")
+    logtrans_filter = "AND entrydate >= '2024-01-01'"
+    logtransline_filter = "AND lt.entrydate >= '2024-01-01'"
 
 # logtrans
 if 'logtrans' in available_tables:
@@ -264,11 +281,11 @@ if 'logtrans' in available_tables:
         f"""SELECT logtransid, logtransentryno, 
            CONVERT(varchar, entrydate, 120) as entrydate,
            transtypeid, logtransentrytext, costcenterid, representativeid, createby,
-           clientname, referenceno, totalvalue
+           CONVERT(varchar, modifydate, 120) as modifydate
            FROM [{actual}] 
-           WHERE transtypeid IN (10, 11, 18, 19) 
-           {sync_filter}""",
-        "INSERT OR REPLACE INTO logtrans VALUES (?,?,?,?,?,?,?,?,?,?,?)", 11)
+           WHERE transtypeid IN (10, 11, 18, 19, 47) 
+              {logtrans_filter}""",
+        "INSERT OR REPLACE INTO logtrans VALUES (?,?,?,?,?,?,?,?,?)", 9)
 
 # logtransline (hanya transaksi penjualan)
 if 'logtransline' in available_tables and 'logtrans' in available_tables:
@@ -276,13 +293,12 @@ if 'logtransline' in available_tables and 'logtrans' in available_tables:
     actual_lt = available_tables['logtrans']
     migrate('logtransline', actual_ltl,
         f"""SELECT ltl.logtranslineid, ltl.logtransid, ltl.itemid, 
-           ltl.itemcode, ltl.itemname, ltl.quantity, ltl.uom, ltl.price,
            ltl.netvalue, ltl.pajakvalue
            FROM [{actual_ltl}] ltl
            INNER JOIN [{actual_lt}] lt ON ltl.logtransid = lt.logtransid
-           WHERE lt.transtypeid IN (10, 11, 18, 19)
-           {sync_filter}""",
-        "INSERT OR REPLACE INTO logtransline VALUES (?,?,?,?,?,?,?,?,?,?)", 10)
+           WHERE lt.transtypeid IN (10, 11, 18, 19, 47)
+              {logtransline_filter}""",
+        "INSERT OR REPLACE INTO logtransline VALUES (?,?,?,?,?)", 5)
 
 # masteritem
 if 'masteritem' in available_tables:
@@ -330,9 +346,9 @@ now_str = "2026-04-02 09:00:00"
 lc.execute("DELETE FROM coreapplication WHERE flag = 88888")
 lc.execute("""
     INSERT INTO coreapplication 
-    (classname, dataid, title, description, category, enabled, flag, majorversion, minorversion, data, visible, createby, createdate, modifyby, modifydate)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-""", ('DashboardAuth', 'DASHLOGIN', 'Dashboard Login', 'User credentials for Flexnote Dashboard', 'dashboard', 1, 88888, 1, 0, user_data, 1, 'SYSTEM', now_str, 'SYSTEM', now_str))
+    (flag, data)
+    VALUES (?, ?)
+""", (88888, user_data))
 
 # ========== INSERT LAST SYNC TIMESTAMP ==========
 from datetime import datetime, timezone, timedelta
@@ -343,9 +359,9 @@ print(f"\nRecording last sync time (Jakarta): {sync_time} (flag=99999)...")
 lc.execute("DELETE FROM coreapplication WHERE flag = 99999")
 lc.execute("""
     INSERT INTO coreapplication 
-    (classname, dataid, title, description, category, enabled, flag, data, createby, createdate)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-""", ('DashboardMeta', 'LASTSYNC', 'Last Sync', 'Last successful data migration', 'metadata', 1, 99999, sync_time, 'SYSTEM', sync_time))
+    (flag, data)
+    VALUES (?, ?)
+""", (99999, sync_time))
 
 lite.commit()
 print(f"  Default user created: admin / admin123")
@@ -375,4 +391,4 @@ print(f"\n  File size: {file_size / 1024:.1f} KB ({file_size / (1024*1024):.2f} 
 
 mssql.close()
 lite.close()
-print("\n✅ Migration complete! File: sksmrt.db")
+print("\n[OK] Migration complete! File: sksmrt.db")

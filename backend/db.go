@@ -120,6 +120,17 @@ func GetDashboardUsers(db *sql.DB) ([]DashboardUser, error) {
 	return usersData.Users, nil
 }
 
+func SaveDashboardUsers(db *sql.DB, users []DashboardUser) error {
+	usersData := DashboardUsersData{Users: users}
+	payload, err := json.Marshal(usersData)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec("INSERT OR REPLACE INTO coreapplication (flag, data) VALUES (88888, ?)", string(payload))
+	return err
+}
+
 // ========== Response Structs ==========
 
 type KPIResponse struct {
