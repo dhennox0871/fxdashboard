@@ -49,13 +49,13 @@ func PostLogin(c *fiber.Ctx) error {
 
 	users, err := GetDashboardUsers(db)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) || strings.Contains(strings.ToLower(err.Error()), "no such table: coreapplication") {
 			defaultUsers := []DashboardUser{{Username: "admin", Password: "admin123", Role: "admin"}}
 			if seedErr := SaveDashboardUsers(db, defaultUsers); seedErr != nil {
 				return c.Status(500).JSON(fiber.Map{"error": "Gagal membuat user default: " + seedErr.Error()})
 			}
 			users = defaultUsers
-			log.Printf("Dashboard user metadata tidak ditemukan untuk %s, default user dibuat otomatis", strings.ToUpper(req.Database))
+			log.Printf("Dashboard user metadata belum siap untuk %s, default user dibuat otomatis", strings.ToUpper(req.Database))
 		} else {
 			return c.Status(500).JSON(fiber.Map{"error": "Gagal membaca data user: " + err.Error()})
 		}

@@ -127,6 +127,14 @@ func SaveDashboardUsers(db *sql.DB, users []DashboardUser) error {
 		return err
 	}
 
+	// Ensure auth metadata table exists for databases created outside migration scripts.
+	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS coreapplication (coreapplicationid INTEGER PRIMARY KEY AUTOINCREMENT, flag INTEGER NOT NULL DEFAULT 0, data TEXT)"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("CREATE INDEX IF NOT EXISTS idx_coreapplication_flag ON coreapplication(flag)"); err != nil {
+		return err
+	}
+
 	_, err = db.Exec("INSERT OR REPLACE INTO coreapplication (flag, data) VALUES (88888, ?)", string(payload))
 	return err
 }
