@@ -1,6 +1,7 @@
 services:
   backend:
     image: ${BACKEND_IMAGE:-ghcr.io/dhennox0871/fxdashboard-backend:latest}
+    pull_policy: always
     build: ./backend
     container_name: fx-backend
     volumes:
@@ -20,6 +21,7 @@ services:
 
   frontend:
     image: ${FRONTEND_IMAGE:-ghcr.io/dhennox0871/fxdashboard-frontend:latest}
+    pull_policy: always
     build: ./frontend
     container_name: fx-frontend
 #    ports:
