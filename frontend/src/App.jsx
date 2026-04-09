@@ -5,6 +5,7 @@ import AnnuallyView from './pages/AnnuallyView';
 import AppearanceSettings from './pages/AppearanceSettings';
 import LoginPage from './pages/LoginPage';
 import SyncPage from './pages/SyncPage';
+import DatabaseManagementPage from './pages/DatabaseManagementPage';
 import { WidgetConfigProvider } from './context/WidgetConfigContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
@@ -13,21 +14,29 @@ function ProtectedRoute({ children }) {
   return isLoggedIn ? children : <Navigate to="/login" replace />;
 }
 
+function ManagementRoute({ children }) {
+  const { isLoggedIn, user } = useAuth();
+  if (!isLoggedIn) return <Navigate to="/login" replace />;
+  return user?.role === 'superadmin' ? children : <Navigate to="/daily" replace />;
+}
+
 function AppRoutes() {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, user } = useAuth();
+  const defaultPath = user?.role === 'superadmin' ? '/db-management' : '/daily';
 
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={isLoggedIn ? <Navigate to="/daily" replace /> : <LoginPage />} />
+        <Route path="/login" element={isLoggedIn ? <Navigate to={defaultPath} replace /> : <LoginPage />} />
         <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-          <Route index element={<Navigate to="/daily" replace />} />
+          <Route index element={<Navigate to={defaultPath} replace />} />
           <Route path="daily" element={<DailyView />} />
           <Route path="annually" element={<AnnuallyView />} />
           <Route path="settings" element={<AppearanceSettings />} />
           <Route path="sync" element={<SyncPage />} />
+          <Route path="db-management" element={<ManagementRoute><DatabaseManagementPage /></ManagementRoute>} />
         </Route>
-        <Route path="*" element={<Navigate to="/daily" replace />} />
+        <Route path="*" element={<Navigate to={defaultPath} replace />} />
       </Routes>
     </BrowserRouter>
   );

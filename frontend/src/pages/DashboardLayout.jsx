@@ -7,6 +7,7 @@ import InsertChart from '@mui/icons-material/InsertChart';
 import Settings from '@mui/icons-material/Settings';
 import Logout from '@mui/icons-material/Logout';
 import Sync from '@mui/icons-material/Sync';
+import Storage from '@mui/icons-material/Storage';
 import { useAuth } from '../context/AuthContext';
 
 const drawerWidth = 240;
@@ -32,10 +33,14 @@ export default function DashboardLayout() {
   };
 
   const navItems = [
-    { text: 'Daily View', icon: <CalendarToday />, path: '/daily' },
-    { text: 'Annually View', icon: <InsertChart />, path: '/annually' },
-    { text: 'Appearance Settings', icon: <Settings />, path: '/settings' },
-    { text: 'Synchronize Data', icon: <Sync />, path: '/sync' },
+    ...(user?.role === 'superadmin'
+      ? [{ text: 'Database Management', icon: <Storage />, path: '/db-management' }]
+      : [
+          { text: 'Daily View', icon: <CalendarToday />, path: '/daily' },
+          { text: 'Annually View', icon: <InsertChart />, path: '/annually' },
+          { text: 'Appearance Settings', icon: <Settings />, path: '/settings' },
+          { text: 'Synchronize Data', icon: <Sync />, path: '/sync' },
+        ]),
   ];
 
   const drawer = (

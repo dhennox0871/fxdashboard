@@ -13,10 +13,10 @@ import argparse
 from decimal import Decimal
 
 # --- SQL Server Connection ---
-SERVER = "idtemp.flexnotesuite.com,18180"
-DATABASE = "sksmrt"
-USERNAME = "fxt"
-PASSWORD = "r3startsaja"
+SERVER = os.environ.get("DB_SOURCE_HOST", "idtemp.flexnotesuite.com,18180")
+DATABASE = os.environ.get("DB_SOURCE_DB", "sksmrt")
+USERNAME = os.environ.get("DB_SOURCE_USER", "fxt")
+PASSWORD = os.environ.get("DB_SOURCE_PASS", "r3startsaja")
 
 drivers = [
     "ODBC Driver 17 for SQL Server",

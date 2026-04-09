@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingDb, setLoadingDb] = useState(true);
+  const isManagementLogin = username.trim().toLowerCase() === 'cs';
 
   useEffect(() => {
     fetch('/api/databases')
@@ -30,8 +31,8 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(username, password, database);
-      navigate('/daily');
+      const data = await login(username, password, isManagementLogin ? '' : database);
+      navigate(data?.role === 'superadmin' ? '/db-management' : '/daily');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -80,14 +81,18 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit}>
           <TextField
             select
-            label="Database"
+            label={isManagementLogin ? 'Database (opsional untuk akun management)' : 'Database'}
             fullWidth
             value={database}
             onChange={(e) => setDatabase(e.target.value)}
             sx={{ mb: 2.5 }}
             variant="outlined"
             disabled={loadingDb}
-            helperText={loadingDb ? 'Memuat daftar database...' : databases.length === 0 ? 'Tidak ada database ditemukan' : ''}
+            helperText={
+              isManagementLogin
+                ? 'Akun management tidak wajib memilih database'
+                : (loadingDb ? 'Memuat daftar database...' : databases.length === 0 ? 'Tidak ada database ditemukan' : '')
+            }
           >
             {databases.map((db) => (
               <MenuItem key={db.name} value={db.name}>
@@ -118,7 +123,7 @@ export default function LoginPage() {
             type="submit"
             variant="contained"
             fullWidth
-            disabled={loading || !username || !password || !database}
+            disabled={loading || !username || !password || (!isManagementLogin && !database)}
             sx={{
               py: 1.5,
               borderRadius: 2,

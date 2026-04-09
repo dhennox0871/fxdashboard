@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -15,10 +16,7 @@ func main() {
 	}
 
 	// Database directory (folder containing .db files)
-	dbDir := os.Getenv("DB_DIR")
-	if dbDir == "" {
-		dbDir = "." // default: current folder
-	}
+	dbDir := resolveDBDir()
 
 	log.Println("Scanning databases in:", dbDir)
 	if err := DBPool.Init(dbDir); err != nil {
@@ -55,6 +53,10 @@ func main() {
 	api.Get("/settings/last-sync", GetLastSync)
 	api.Post("/settings/sync", PostSync)
 	api.Get("/settings/sync-status", GetSyncStatus)
+	api.Get("/settings/databases", GetDatabaseManagementList)
+	api.Post("/settings/databases", UpsertDatabaseSource)
+	api.Post("/settings/databases/:name/status", SetDatabaseStatus)
+	api.Post("/settings/databases/:name/sync", PostSyncDatabaseByName)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -62,4 +64,28 @@ func main() {
 	}
 	log.Printf("Server running on port %s", port)
 	app.Listen(":" + port)
+}
+
+func resolveDBDir() string {
+	if envDir := os.Getenv("DB_DIR"); envDir != "" {
+		return envDir
+	}
+
+	candidates := []string{
+		"./data",
+		"../data",
+		".",
+	}
+
+	for _, candidate := range candidates {
+		if stat, err := os.Stat(candidate); err == nil && stat.IsDir() {
+			abs, absErr := filepath.Abs(candidate)
+			if absErr == nil {
+				return abs
+			}
+			return candidate
+		}
+	}
+
+	return "."
 }

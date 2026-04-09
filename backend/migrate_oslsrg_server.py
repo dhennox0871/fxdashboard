@@ -11,9 +11,9 @@ import sys
 import argparse
 from decimal import Decimal
 
-SERVER = "oslsrg.flexnotesuite.com,18180"
-USERNAME = "dhen"
-PASSWORD = "abcMulyosari"
+SERVER = os.environ.get("DB_SOURCE_HOST", "oslsrg.flexnotesuite.com,18180")
+USERNAME = os.environ.get("DB_SOURCE_USER", "dhen")
+PASSWORD = os.environ.get("DB_SOURCE_PASS", "abcMulyosari")
 DATABASES = ["oslsrg", "oslank", "oslken"]
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

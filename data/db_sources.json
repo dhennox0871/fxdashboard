@@ -1,0 +1,54 @@
+{
+  "sources": [
+    {
+      "name": "MRTMTR",
+      "host": "idtemp.flexnotesuite.com,18180",
+      "database": "mrtmtr",
+      "username": "fxt",
+      "password": "r3startsaja",
+      "script": "migrate_base.py",
+      "mode": "incremental",
+      "enabled": true
+    },
+    {
+      "name": "OSLANK",
+      "host": "oslsrg.flexnotesuite.com,18180",
+      "database": "oslank",
+      "username": "dhen",
+      "password": "abcMulyosari",
+      "script": "migrate_to_sqlite.py",
+      "mode": "incremental",
+      "enabled": false
+    },
+    {
+      "name": "OSLKEN",
+      "host": "",
+      "database": "oslken",
+      "username": "",
+      "password": "",
+      "script": "migrate_oslsrg_server.py",
+      "mode": "",
+      "enabled": false
+    },
+    {
+      "name": "OSLSRG",
+      "host": "",
+      "database": "oslsrg",
+      "username": "",
+      "password": "",
+      "script": "migrate_oslsrg_server.py",
+      "mode": "",
+      "enabled": false
+    },
+    {
+      "name": "SKSMRT",
+      "host": "idtemp.flexnotesuite.com,18180",
+      "database": "sksmrt",
+      "username": "fxt",
+      "password": "r3startsaja",
+      "script": "migrate_sksmrt.py",
+      "mode": "incremental",
+      "enabled": true
+    }
+  ]
+}

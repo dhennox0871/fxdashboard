@@ -7,13 +7,19 @@ import sqlite3
 import json
 import os
 
+# SQL Server source can be overridden via environment variables.
+SERVER = os.environ.get("DB_SOURCE_HOST", "idtemp.flexnotesuite.com,18180")
+DATABASE = os.environ.get("DB_SOURCE_DB", "oslank")
+USERNAME = os.environ.get("DB_SOURCE_USER", "fxadmin18")
+PASSWORD = os.environ.get("DB_SOURCE_PASS", "r3startsaja")
+
 # --- SQL Server Connection ---
 mssql_str = (
     "DRIVER={ODBC Driver 17 for SQL Server};"
-    "SERVER=idtemp.flexnotesuite.com,18180;"
-    "DATABASE=oslank;"
-    "UID=fxadmin18;"
-    "PWD=r3startsaja;"
+    f"SERVER={SERVER};"
+    f"DATABASE={DATABASE};"
+    f"UID={USERNAME};"
+    f"PWD={PASSWORD};"
     "TrustServerCertificate=yes;"
     "Encrypt=no;"
 )

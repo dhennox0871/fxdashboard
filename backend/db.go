@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -32,43 +33,88 @@ type DatabaseInfo struct {
 // InitPool scans the database directory for .db files
 func (p *DatabasePool) Init(dir string) error {
 	p.dbDir = dir
+	return p.reloadFromDisk()
+}
 
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("cannot create database directory '%s': %v", dir, err)
+// Refresh rescans DB_DIR and loads newly created SQLite files.
+func (p *DatabasePool) Refresh() error {
+	p.mu.RLock()
+	dir := p.dbDir
+	p.mu.RUnlock()
+	if dir == "" {
+		return fmt.Errorf("database pool not initialized")
+	}
+	return p.reloadFromDisk()
+}
+
+func (p *DatabasePool) DBDir() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.dbDir
+}
+
+func (p *DatabasePool) reloadFromDisk() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if err := os.MkdirAll(p.dbDir, 0755); err != nil {
+		return fmt.Errorf("cannot create database directory '%s': %v", p.dbDir, err)
 	}
 
-	entries, err := os.ReadDir(dir)
+	entries, err := os.ReadDir(p.dbDir)
 	if err != nil {
-		return fmt.Errorf("cannot read database directory '%s': %v", dir, err)
+		return fmt.Errorf("cannot read database directory '%s': %v", p.dbDir, err)
 	}
 
+	newConnections := make(map[string]*sql.DB)
 	count := 0
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".db") {
-			name := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
-			if strings.ToUpper(name) == "MANAGER" {
-				continue
-			}
-			dbPath := filepath.Join(dir, entry.Name())
-			db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
-			if err != nil {
-				log.Printf("Warning: cannot open database '%s': %v", entry.Name(), err)
-				continue
-			}
-			if err := db.Ping(); err != nil {
-				log.Printf("Warning: cannot ping database '%s': %v", entry.Name(), err)
-				continue
-			}
-			p.connections[strings.ToUpper(name)] = db
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".db") {
+			continue
+		}
+
+		name := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+		upperName := strings.ToUpper(name)
+		if upperName == "MANAGER" {
+			continue
+		}
+
+		if existing, ok := p.connections[upperName]; ok {
+			newConnections[upperName] = existing
 			count++
-			log.Printf("  Database loaded: %s (%s)", strings.ToUpper(name), entry.Name())
+			continue
+		}
+
+		dbPath := filepath.Join(p.dbDir, entry.Name())
+		db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+		if err != nil {
+			log.Printf("Warning: cannot open database '%s': %v", entry.Name(), err)
+			continue
+		}
+		if err := db.Ping(); err != nil {
+			log.Printf("Warning: cannot ping database '%s': %v", entry.Name(), err)
+			_ = db.Close()
+			continue
+		}
+
+		newConnections[upperName] = db
+		count++
+		log.Printf("  Database loaded: %s (%s)", upperName, entry.Name())
+	}
+
+	for name, oldConn := range p.connections {
+		if _, stillUsed := newConnections[name]; !stillUsed {
+			_ = oldConn.Close()
 		}
 	}
 
+	p.connections = newConnections
+
 	if count == 0 {
-		log.Printf("Warning: no .db files found in '%s'", dir)
+		log.Printf("Warning: no .db files found in '%s'", p.dbDir)
 		return nil
 	}
+
 	log.Printf("Total databases loaded: %d", count)
 	return nil
 }
@@ -91,6 +137,9 @@ func (p *DatabasePool) List() []DatabaseInfo {
 			Filename: strings.ToLower(name) + ".db",
 		})
 	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].Name < list[j].Name
+	})
 	return list
 }
 

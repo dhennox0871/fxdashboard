@@ -77,7 +77,7 @@ func getSyncProgress(dbName string) *SyncProgress {
 	return &clone
 }
 
-func startSyncJob(dbName, script string, scriptArgs []string) error {
+func startSyncJob(dbName, script string, scriptArgs []string, env map[string]string) error {
 	current := getSyncProgress(dbName)
 	if current != nil && current.Running {
 		return fmt.Errorf("Sinkronisasi masih berjalan untuk database %s", strings.ToUpper(dbName))
@@ -113,6 +113,12 @@ func startSyncJob(dbName, script string, scriptArgs []string) error {
 
 		cmd := exec.Command(pythonCmd, cmdArgs...)
 		cmd.Dir = "."
+		if len(env) > 0 {
+			cmd.Env = os.Environ()
+			for k, v := range env {
+				cmd.Env = append(cmd.Env, k+"="+v)
+			}
+		}
 
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
@@ -282,30 +288,45 @@ func PostSync(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Database tidak terpilih"})
 	}
 
-	dbName = strings.ToLower(dbName)
-	var script string
-	args := []string{}
-	switch dbName {
-	case "oslank":
-		script = "migrate_to_sqlite.py"
-	case "sksmrt":
-		script = "migrate_sksmrt.py"
-		args = append(args, "--mode", "incremental")
-	case "oslsrg":
-		script = "migrate_oslsrg_server.py"
-		args = append(args, "--database", "oslsrg")
-	default:
-		return c.Status(400).JSON(fiber.Map{"error": "Skrip sinkronisasi tidak ditemukan untuk database ini"})
+	upperName := strings.ToUpper(dbName)
+	sources, err := loadDatabaseSources()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal membaca konfigurasi database: " + err.Error()})
 	}
 
-	log.Printf("Starting async sync for %s using %s %v", dbName, script, args)
+	source, ok := sources[upperName]
+	if !ok {
+		source = defaultDatabaseSource(upperName)
+	}
 
-	if err := startSyncJob(dbName, script, args); err != nil {
+	targetDatabase := strings.TrimSpace(source.Database)
+	if targetDatabase == "" {
+		targetDatabase = strings.ToLower(upperName)
+	}
+
+	env := map[string]string{
+		"DB_DIR":      DBPool.DBDir(),
+		"DB_SOURCE_DB": targetDatabase,
+	}
+	if source.Host != "" {
+		env["DB_SOURCE_HOST"] = source.Host
+	}
+	if source.Username != "" {
+		env["DB_SOURCE_USER"] = source.Username
+	}
+	if source.Password != "" {
+		env["DB_SOURCE_PASS"] = source.Password
+	}
+
+	script, args := resolveSyncScriptAndArgs(upperName, source)
+	log.Printf("Starting async sync for %s using %s %v", strings.ToLower(upperName), script, args)
+
+	if err := startSyncJob(strings.ToLower(upperName), script, args, env); err != nil {
 		return c.Status(409).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	return c.JSON(fiber.Map{
-		"message": "Sinkronisasi dimulai untuk " + dbName,
+		"message": "Sinkronisasi dimulai untuk " + strings.ToLower(upperName),
 		"running": true,
 	})
 }

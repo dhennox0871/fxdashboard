@@ -7,9 +7,9 @@ from decimal import Decimal
 from datetime import datetime, timedelta
 
 # --- SQL Server Connection Config ---
-SERVER = "idtemp.flexnotesuite.com,18180"
-USERNAME = "fxt"
-PASSWORD = "r3startsaja"
+SERVER = os.environ.get("DB_SOURCE_HOST", "idtemp.flexnotesuite.com,18180")
+USERNAME = os.environ.get("DB_SOURCE_USER", "fxt")
+PASSWORD = os.environ.get("DB_SOURCE_PASS", "r3startsaja")
 
 DRIVERS = [
     "ODBC Driver 18 for SQL Server",
@@ -92,6 +92,7 @@ class UniversalMigrator:
         cur.execute("DROP TABLE IF EXISTS masteritemgroup")
         cur.execute("DROP TABLE IF EXISTS mastercostcenter")
         cur.execute("DROP TABLE IF EXISTS masterrepresentative")
+        cur.execute("DROP TABLE IF EXISTS flexnotesetting")
         cur.execute("DROP TABLE IF EXISTS coreapplication")
 
         cur.execute("""CREATE TABLE logtrans (
@@ -121,6 +122,7 @@ class UniversalMigrator:
         cur.execute("CREATE TABLE masteritemgroup (itemgroupid INTEGER PRIMARY KEY, itemgroupcode TEXT, description TEXT)")
         cur.execute("CREATE TABLE mastercostcenter (costcenterid INTEGER PRIMARY KEY, costcentercode TEXT, description TEXT)")
         cur.execute("CREATE TABLE masterrepresentative (representativeid INTEGER PRIMARY KEY, representativecode TEXT, name TEXT)")
+        cur.execute("CREATE TABLE flexnotesetting (flexnotesettingid INTEGER PRIMARY KEY, settingtypecode TEXT, datachar1 TEXT, datachar2 TEXT)")
         cur.execute("CREATE TABLE coreapplication (flag INTEGER PRIMARY KEY, data TEXT)")
         
         cur.execute("CREATE INDEX IF NOT EXISTS idx_lt_date ON logtrans(entrydate)")
@@ -134,7 +136,8 @@ class UniversalMigrator:
             "masteritemgroup": ["itemgroupid", "itemgroupcode", "description"],
             "mastercostcenter": ["costcenterid", "costcentercode", "description"],
             "masterrepresentative": ["representativeid", "representativecode", "name"],
-            "masteritem": ["itemid", "itemgroupid", "itemcode", "itemname"]
+            "masteritem": ["itemid", "itemgroupid", "itemcode", "itemname"],
+            "flexnotesetting": ["flexnotesettingid", "settingtypecode", "datachar1", "datachar2"],
         }
         
         for table, cols in masters.items():
@@ -300,7 +303,8 @@ class UniversalMigrator:
         if self.lite: self.lite.close()
 
 def run_sync(db_name, is_full=False):
-    migrator = UniversalMigrator(db_name, is_full)
+    target_db = os.environ.get("DB_SOURCE_DB", db_name)
+    migrator = UniversalMigrator(target_db, is_full)
     if migrator.connect():
         migrator.setup_schema()
         migrator.migrate_masters()
