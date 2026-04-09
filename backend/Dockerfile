@@ -1,3 +1,14 @@
+FROM golang:1.21-bookworm AS go-builder
+
+WORKDIR /src
+
+# Cache dependencies first for faster rebuilds
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/main .
+
 FROM python:3.11-slim
 
 # Install system dependencies (SQL Server ODBC drivers)
@@ -19,8 +30,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt || true
 
-# Copy pre-built Go binary (compiled locally for Linux)
-COPY main .
+# Copy Go binary built in the builder stage
+COPY --from=go-builder /out/main .
 RUN chmod +x main
 
 # Copy python scripts
