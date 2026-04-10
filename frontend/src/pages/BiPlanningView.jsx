@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -15,6 +15,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   Tabs,
   TextField,
@@ -25,87 +26,23 @@ import Inventory2 from '@mui/icons-material/Inventory2';
 import Sell from '@mui/icons-material/Sell';
 import Refresh from '@mui/icons-material/Refresh';
 import { useAuth } from '../context/AuthContext';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
 const ownerSections = [
-  'A. KPI cards (sudah live)',
-  'B. Revenue trend (line chart)',
-  'C. Channel contribution (bar/pie dari costcenter)',
-  'D. Business health alert (stock/cancel/margin)',
-  'E. Product snapshot (Top 5 dan Bottom 5 SKU)',
 ];
-
-const opsSections = [
-  'A. Inventory KPI (Total SKU, Total Stock, Inventory Value, DOI)',
-  'B. Inventory Health core table (sudah live DOI simulator)',
-  'C. Low & out of stock alert',
-  'D. Inventory aging (pending, menunggu movement data)',
-  'E. Size/dimensi performance',
-];
-
-const productSections = [
-  'A. Sales KPI (Revenue, Units, Avg Margin, Sell-through)',
-  'B. Category performance',
-  'C. Product lifecycle',
-  'D. Top & slow product',
-  'E. Promo impact (ditunda)',
-];
-
-const dataChecklist = [
-  {
-    area: 'Sales Core',
-    status: 'Ready',
-    needed: 'Revenue, orders, date trend, category and cashier split',
-    source: 'logtrans, logtransline, masteritemgroup, mastercostcenter, masterrepresentative',
-  },
-  {
-    area: 'SKU Level Margin',
-    status: 'Ready',
-    needed: 'HPP per line, total HPP, gross value (netvalue)',
-    source: 'logtransline.hpp, logtransline.totalhpp, logtransline.netvalue',
-  },
-  {
-    area: 'Inventory Snapshot',
-    status: 'Ready',
-    needed: 'Stock by item and warehouse (debet-credit)',
-    source: 'stockview + masterwarehouse + masteritem',
-  },
-  {
-    area: 'Inventory Aging',
-    status: 'Missing',
-    needed: 'Inbound date or last movement date per SKU batch',
-    source: 'Need stock movement history table',
-  },
-  {
-    area: 'Channel Attribution',
-    status: 'Ready',
-    needed: 'Channel contribution by cost center',
-    source: 'logtrans.costcenterid + mastercostcenter',
-  },
-  {
-    area: 'Campaign ROI',
-    status: 'Missing',
-    needed: 'Campaign cost, discount value, campaign ID linkage to orders',
-    source: 'Need promo/campaign master and transaction relation',
-  },
-  {
-    area: 'Cancellation Quality',
-    status: 'Partial',
-    needed: 'Retur/cancel quantity from transaction type',
-    source: 'transtypeid 11 and 19 in logtrans/logtransline',
-  },
-  {
-    area: 'Size Performance',
-    status: 'Ready',
-    needed: 'Dimensi produk (length/width/depth/height/weight/volume)',
-    source: 'masteritemuom linked by itemid, base UOM from masteritem.uomid -> masteruom',
-  },
-];
-
-function statusColor(status) {
-  if (status === 'Ready') return 'success';
-  if (status === 'Partial') return 'warning';
-  return 'default';
-}
 
 export default function BiPlanningView() {
   const { fetchWithAuth } = useAuth();
@@ -116,17 +53,61 @@ export default function BiPlanningView() {
   const [kpiError, setKpiError] = useState('');
   const [days, setDays] = useState(30);
   const [scope, setScope] = useState('global');
+  const [doiStatusFilter, setDoiStatusFilter] = useState('all');
+  const [doiPage, setDoiPage] = useState(0);
+  const [doiRowsPerPage, setDoiRowsPerPage] = useState(25);
   const [doiRows, setDoiRows] = useState([]);
   const [loadingDOI, setLoadingDOI] = useState(true);
   const [doiError, setDoiError] = useState('');
+  const [channelFilter, setChannelFilter] = useState('');
+  const [trendRows, setTrendRows] = useState([]);
+  const [trendLoading, setTrendLoading] = useState(true);
+  const [trendError, setTrendError] = useState('');
+  const [channelRows, setChannelRows] = useState([]);
+  const [channelLoading, setChannelLoading] = useState(true);
+  const [channelError, setChannelError] = useState('');
+  const [channelChartType, setChannelChartType] = useState('bar');
+  const [healthData, setHealthData] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+  const [healthError, setHealthError] = useState('');
+  const [snapshotData, setSnapshotData] = useState({ top_revenue: [], bottom_risk: [] });
+  const [snapshotLoading, setSnapshotLoading] = useState(true);
+  const [snapshotError, setSnapshotError] = useState('');
+  const [productKPI, setProductKPI] = useState(null);
+  const [productKPILoading, setProductKPILoading] = useState(true);
+  const [productKPIError, setProductKPIError] = useState('');
+  const [categoryRows, setCategoryRows] = useState([]);
+  const [categoryLoading, setCategoryLoading] = useState(true);
+  const [categoryError, setCategoryError] = useState('');
+  const [lifecycleRows, setLifecycleRows] = useState([]);
+  const [lifecycleLoading, setLifecycleLoading] = useState(true);
+  const [lifecycleError, setLifecycleError] = useState('');
+  const [performanceData, setPerformanceData] = useState({ top: [], slow: [] });
+  const [performanceLoading, setPerformanceLoading] = useState(true);
+  const [performanceError, setPerformanceError] = useState('');
+
+  const parseJsonSafe = async (res) => {
+    const text = await res.text();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { raw: text };
+    }
+  };
 
   const fetchExecutiveKPI = async () => {
     setLoadingKPI(true);
     setKpiError('');
     try {
       const res = await fetchWithAuth(`/api/bi/executive-kpi?period=${kpiPeriod}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Gagal memuat KPI executive');
+      const data = await parseJsonSafe(res);
+      if (!res.ok) {
+        if (typeof data.raw === 'string' && data.raw.includes('Cannot GET')) {
+          throw new Error('Endpoint KPI BI belum aktif. Restart backend lokal agar route /api/bi/executive-kpi terbaca.');
+        }
+        throw new Error(data.error || data.raw || 'Gagal memuat KPI executive');
+      }
       setKpiData(data);
     } catch (err) {
       setKpiError(err.message || 'Gagal memuat KPI executive');
@@ -141,14 +122,175 @@ export default function BiPlanningView() {
     setDoiError('');
     try {
       const res = await fetchWithAuth(`/api/bi/doi?days=${days}&scope=${scope}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Gagal memuat data DOI');
+      const data = await parseJsonSafe(res);
+      if (!res.ok) {
+        if (typeof data.raw === 'string' && data.raw.includes('Cannot GET')) {
+          throw new Error('Endpoint DOI BI belum aktif. Restart backend lokal agar route /api/bi/doi terbaca.');
+        }
+        throw new Error(data.error || data.raw || 'Gagal memuat data DOI');
+      }
       setDoiRows(data.rows || []);
     } catch (err) {
       setDoiError(err.message || 'Gagal memuat data DOI');
       setDoiRows([]);
     } finally {
       setLoadingDOI(false);
+    }
+  };
+
+  const fetchRevenueTrend = async () => {
+    setTrendLoading(true);
+    setTrendError('');
+    try {
+      const channelParam = channelFilter ? `&channel=${encodeURIComponent(channelFilter)}` : '';
+      const res = await fetchWithAuth(`/api/bi/revenue-trend?period=${kpiPeriod}${channelParam}`);
+      const data = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(data.error || data.raw || 'Gagal memuat revenue trend');
+      setTrendRows((data.rows || []).map((r) => ({
+        ...r,
+        revenue: Number(r.revenue || 0),
+        label: (r.date || '').slice(5),
+      })));
+    } catch (err) {
+      setTrendError(err.message || 'Gagal memuat revenue trend');
+      setTrendRows([]);
+    } finally {
+      setTrendLoading(false);
+    }
+  };
+
+  const fetchChannelContribution = async () => {
+    setChannelLoading(true);
+    setChannelError('');
+    try {
+      const res = await fetchWithAuth(`/api/bi/channel-contribution?period=${kpiPeriod}`);
+      const data = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(data.error || data.raw || 'Gagal memuat channel contribution');
+      setChannelRows((data.rows || []).map((r) => ({
+        ...r,
+        revenue: Number(r.revenue || 0),
+        contribution: Number(r.contribution || 0),
+      })));
+    } catch (err) {
+      setChannelError(err.message || 'Gagal memuat channel contribution');
+      setChannelRows([]);
+    } finally {
+      setChannelLoading(false);
+    }
+  };
+
+  const fetchBusinessHealth = async () => {
+    setHealthLoading(true);
+    setHealthError('');
+    try {
+      const res = await fetchWithAuth(`/api/bi/business-health?period=${kpiPeriod}&days=30`);
+      const data = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(data.error || data.raw || 'Gagal memuat business health');
+      setHealthData(data);
+    } catch (err) {
+      setHealthError(err.message || 'Gagal memuat business health');
+      setHealthData(null);
+    } finally {
+      setHealthLoading(false);
+    }
+  };
+
+  const fetchProductSnapshot = async () => {
+    setSnapshotLoading(true);
+    setSnapshotError('');
+    try {
+      const res = await fetchWithAuth(`/api/bi/product-snapshot?period=${kpiPeriod}`);
+      const data = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(data.error || data.raw || 'Gagal memuat product snapshot');
+      setSnapshotData({
+        top_revenue: data.top_revenue || [],
+        bottom_risk: data.bottom_risk || [],
+      });
+    } catch (err) {
+      setSnapshotError(err.message || 'Gagal memuat product snapshot');
+      setSnapshotData({ top_revenue: [], bottom_risk: [] });
+    } finally {
+      setSnapshotLoading(false);
+    }
+  };
+
+  const fetchProductKPI = async () => {
+    setProductKPILoading(true);
+    setProductKPIError('');
+    try {
+      const res = await fetchWithAuth(`/api/bi/product-kpi?period=${kpiPeriod}`);
+      const data = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(data.error || data.raw || 'Gagal memuat sales KPI');
+      setProductKPI(data);
+    } catch (err) {
+      setProductKPIError(err.message || 'Gagal memuat sales KPI');
+      setProductKPI(null);
+    } finally {
+      setProductKPILoading(false);
+    }
+  };
+
+  const fetchCategoryPerformance = async () => {
+    setCategoryLoading(true);
+    setCategoryError('');
+    try {
+      const res = await fetchWithAuth(`/api/bi/category-performance?period=${kpiPeriod}`);
+      const data = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(data.error || data.raw || 'Gagal memuat category performance');
+      setCategoryRows(
+        (data.rows || []).map((r) => ({
+          ...r,
+          revenue: Number(r.revenue || 0),
+          units: Number(r.units || 0),
+          margin_pct: Number(r.margin_pct || 0),
+        })),
+      );
+    } catch (err) {
+      setCategoryError(err.message || 'Gagal memuat category performance');
+      setCategoryRows([]);
+    } finally {
+      setCategoryLoading(false);
+    }
+  };
+
+  const fetchProductLifecycle = async () => {
+    setLifecycleLoading(true);
+    setLifecycleError('');
+    try {
+      const res = await fetchWithAuth(`/api/bi/product-lifecycle?period=${kpiPeriod}`);
+      const data = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(data.error || data.raw || 'Gagal memuat product lifecycle');
+      setLifecycleRows(
+        (data.rows || []).map((r) => ({
+          ...r,
+          count: Number(r.count || 0),
+          percent: Number(r.percent || 0),
+        })),
+      );
+    } catch (err) {
+      setLifecycleError(err.message || 'Gagal memuat product lifecycle');
+      setLifecycleRows([]);
+    } finally {
+      setLifecycleLoading(false);
+    }
+  };
+
+  const fetchProductPerformance = async () => {
+    setPerformanceLoading(true);
+    setPerformanceError('');
+    try {
+      const res = await fetchWithAuth(`/api/bi/product-performance?period=${kpiPeriod}&days=8`);
+      const data = await parseJsonSafe(res);
+      if (!res.ok) throw new Error(data.error || data.raw || 'Gagal memuat top & slow product');
+      setPerformanceData({
+        top: data.top || [],
+        slow: data.slow || [],
+      });
+    } catch (err) {
+      setPerformanceError(err.message || 'Gagal memuat top & slow product');
+      setPerformanceData({ top: [], slow: [] });
+    } finally {
+      setPerformanceLoading(false);
     }
   };
 
@@ -159,6 +301,29 @@ export default function BiPlanningView() {
   useEffect(() => {
     fetchExecutiveKPI();
   }, [kpiPeriod]);
+
+  useEffect(() => {
+    if (activeTab === 0) {
+      fetchChannelContribution();
+      fetchBusinessHealth();
+      fetchProductSnapshot();
+    }
+  }, [kpiPeriod, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 0) {
+      fetchRevenueTrend();
+    }
+  }, [kpiPeriod, channelFilter, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 2) {
+      fetchProductKPI();
+      fetchCategoryPerformance();
+      fetchProductLifecycle();
+      fetchProductPerformance();
+    }
+  }, [kpiPeriod, activeTab]);
 
   const formatNumber = (value) => {
     const n = Number(value || 0);
@@ -174,6 +339,42 @@ export default function BiPlanningView() {
     }).format(n);
   };
 
+  const chartColors = ['#9a55ff', '#07cdae', '#047edf', '#ffbf96', '#fe7096', '#81C784'];
+  const uniformKpiCardSx = {
+    p: 1.5,
+    borderRadius: 2,
+    minHeight: 100,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
+    gap: 0.8,
+  };
+  const trendChartRows = trendRows.filter((r) => Number.isFinite(Number(r.revenue)));
+  const contributionChartRows = channelRows.filter((r) => Number.isFinite(Number(r.revenue)) && Number(r.revenue) > 0);
+  const categoryChartRows = categoryRows.slice(0, 8);
+  const lifecycleChartRows = lifecycleRows.filter((r) => r.count > 0);
+  const doiStatusOptions = useMemo(() => {
+    const setStatus = new Set();
+    doiRows.forEach((row) => {
+      const status = String(row.status || '').trim();
+      if (status) setStatus.add(status);
+    });
+    return Array.from(setStatus);
+  }, [doiRows]);
+  const filteredDoiRows = useMemo(() => {
+    if (doiStatusFilter === 'all') return doiRows;
+    return doiRows.filter((row) => String(row.status || '').trim() === doiStatusFilter);
+  }, [doiRows, doiStatusFilter]);
+  const pagedDoiRows = useMemo(() => {
+    const start = doiPage * doiRowsPerPage;
+    return filteredDoiRows.slice(start, start + doiRowsPerPage);
+  }, [filteredDoiRows, doiPage, doiRowsPerPage]);
+
+  useEffect(() => {
+    setDoiPage(0);
+  }, [days, scope, doiStatusFilter, doiRowsPerPage]);
+
   const statusChipColor = (status) => {
     if (status === 'Urgent') return 'error';
     if (status === 'Waspada') return 'warning';
@@ -182,20 +383,79 @@ export default function BiPlanningView() {
     return 'default';
   };
 
+  const opsSummary = useMemo(() => {
+    const items = Array.isArray(doiRows) ? doiRows : [];
+    const uniqInStock = new Set();
+    let totalStock = 0;
+    let doiTotal = 0;
+    let doiCount = 0;
+    let urgentCount = 0;
+    let outOfStockCount = 0;
+
+    const outOfStockRows = [];
+    const lowStockRows = [];
+
+    for (const row of items) {
+      const stock = Number(row.stock_qty || 0);
+      const doi = row.doi == null ? null : Number(row.doi);
+      const key = `${row.item_id || ''}-${row.warehouse_code || 'GLOBAL'}`;
+
+      if (stock > 0 && row.item_id != null) {
+        uniqInStock.add(row.item_id);
+      }
+      if (stock > 0) totalStock += stock;
+      if (Number.isFinite(doi) && doi > 0) {
+        doiTotal += doi;
+        doiCount += 1;
+      }
+
+      if (row.status === 'Urgent') urgentCount += 1;
+      if (row.status === 'Out of Stock') {
+        outOfStockCount += 1;
+        outOfStockRows.push({
+          key,
+          itemCode: row.item_code || `ITEM-${row.item_id}`,
+          warehouse: row.warehouse_code || 'GLOBAL',
+        });
+      }
+
+      if (Number.isFinite(doi) && doi > 0 && doi < 14 && stock > 0) {
+        lowStockRows.push({
+          key,
+          itemCode: row.item_code || `ITEM-${row.item_id}`,
+          warehouse: row.warehouse_code || 'GLOBAL',
+          stock,
+          avgDaily: Number(row.avg_daily_sold || 0),
+          doi,
+        });
+      }
+    }
+
+    lowStockRows.sort((a, b) => a.doi - b.doi);
+
+    return {
+      totalSKUActive: uniqInStock.size,
+      totalStock,
+      averageDOI: doiCount > 0 ? doiTotal / doiCount : 0,
+      urgentCount,
+      outOfStockCount,
+      outOfStockRows: outOfStockRows.slice(0, 7),
+      lowStockRows: lowStockRows.slice(0, 7),
+    };
+  }, [doiRows]);
+
   return (
     <Box>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 800 }}>BI Planning Workspace</Typography>
-        <Typography variant="body2" color="text.secondary">
-          Area ini dipisahkan dari dashboard berjalan. Fokus untuk menyiapkan model laporan baru berdasarkan dokumen mockup BI.
-        </Typography>
-      </Box>
-
-      <Alert severity="info" sx={{ mb: 3 }}>
-        BI Planning dipisah dari dashboard utama. Di bawah ini dibagi 3 tab sesuai PDF: Owner, Ops & Inventory, Product & Sales.
-      </Alert>
-
-      <Paper sx={{ mb: 3, borderRadius: 2.5 }}>
+      <Paper
+        sx={{
+          mb: 2.5,
+          borderRadius: 2.5,
+          position: 'sticky',
+          top: { xs: 64, sm: 72 },
+          zIndex: 12,
+          backgroundColor: '#fff',
+        }}
+      >
         <Tabs
           value={activeTab}
           onChange={(_, value) => setActiveTab(value)}
@@ -211,14 +471,16 @@ export default function BiPlanningView() {
 
       {activeTab === 0 && (
         <>
-          <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Roadmap Owner Dashboard</Typography>
-            <Stack spacing={0.8}>
-              {ownerSections.map((item) => (
-                <Typography key={item} variant="body2" color="text.secondary">- {item}</Typography>
-              ))}
-            </Stack>
-          </Paper>
+          {ownerSections.length > 0 && (
+            <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Roadmap Owner Dashboard</Typography>
+              <Stack spacing={0.8}>
+                {ownerSections.map((item) => (
+                  <Typography key={item} variant="body2" color="text.secondary">- {item}</Typography>
+                ))}
+              </Stack>
+            </Paper>
+          )}
 
           <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
             <Stack
@@ -230,7 +492,6 @@ export default function BiPlanningView() {
             >
               <Box>
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>A. KPI Cards (Top Section)</Typography>
-                <Typography variant="body2" color="text.secondary">Letak paling atas, 1 baris. Toggle Today / MTD.</Typography>
               </Box>
               <Stack direction="row" spacing={1}>
                 <Button
@@ -245,7 +506,7 @@ export default function BiPlanningView() {
                   variant={kpiPeriod === 'mtd' ? 'contained' : 'outlined'}
                   onClick={() => setKpiPeriod('mtd')}
                 >
-                  MTD
+                  MTD (Bulan Berjalan)
                 </Button>
               </Stack>
             </Stack>
@@ -259,31 +520,31 @@ export default function BiPlanningView() {
             ) : (
               <Grid container spacing={1.2}>
                 <Grid item xs={12} sm={6} md={4} lg={2}>
-                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
                     <Typography variant="caption" color="text.secondary">Revenue {kpiPeriod.toUpperCase()}</Typography>
                     <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatCurrency(kpiData?.revenue)}</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} sm={6} md={4} lg={2}>
-                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
                     <Typography variant="caption" color="text.secondary">Orders {kpiPeriod.toUpperCase()}</Typography>
                     <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(kpiData?.orders)}</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} sm={6} md={4} lg={2}>
-                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
                     <Typography variant="caption" color="text.secondary">Units Sold</Typography>
                     <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(kpiData?.units_sold)}</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} sm={6} md={4} lg={2}>
-                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
                     <Typography variant="caption" color="text.secondary">Gross Profit</Typography>
                     <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatCurrency(kpiData?.gross_profit)}</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} sm={6} md={4} lg={2}>
-                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
                     <Typography variant="caption" color="text.secondary">Gross Margin %</Typography>
                     <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
                       {formatNumber(kpiData?.gross_margin)}%
@@ -292,7 +553,7 @@ export default function BiPlanningView() {
                   </Paper>
                 </Grid>
                 <Grid item xs={12} sm={6} md={4} lg={2}>
-                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
                     <Typography variant="caption" color="text.secondary">AOV</Typography>
                     <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatCurrency(kpiData?.aov)}</Typography>
                   </Paper>
@@ -300,19 +561,356 @@ export default function BiPlanningView() {
               </Grid>
             )}
           </Paper>
+
+          <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
+            <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} spacing={1.5} sx={{ mb: 2 }}>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>B. Revenue Trend</Typography>
+                <Typography variant="body2" color="text.secondary">Line chart revenue per tanggal, filter channel (costcenter).</Typography>
+              </Box>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                <TextField
+                  select
+                  size="small"
+                  label="Filter Channel"
+                  value={channelFilter}
+                  onChange={(e) => setChannelFilter(e.target.value)}
+                  sx={{ minWidth: 220 }}
+                >
+                  <MenuItem value="">Semua Channel</MenuItem>
+                  {channelRows.map((row) => (
+                    <MenuItem key={row.channel} value={row.channel}>{row.channel}</MenuItem>
+                  ))}
+                </TextField>
+                <Button variant="outlined" startIcon={<Refresh />} onClick={fetchRevenueTrend}>Refresh</Button>
+              </Stack>
+            </Stack>
+
+            {trendError && <Alert severity="warning" sx={{ mb: 2 }}>{trendError}</Alert>}
+            {trendLoading ? (
+              <Box sx={{ py: 5, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>
+            ) : trendChartRows.length === 0 ? (
+              <Alert severity="info">Belum ada data trend untuk filter periode/channel ini.</Alert>
+            ) : (
+              <Box sx={{ width: '100%', height: 280 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={trendChartRows} margin={{ top: 12, right: 20, left: 10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis tickFormatter={(v) => new Intl.NumberFormat('id-ID', { notation: 'compact' }).format(v)} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(v) => formatCurrency(v)} labelFormatter={(v) => `Tanggal ${v}`} />
+                    <Area type="monotone" dataKey="revenue" stroke="#9a55ff" fill="#9a55ff22" strokeWidth={2.5} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </Box>
+            )}
+          </Paper>
+
+          <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
+            <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} spacing={1.5} sx={{ mb: 2 }}>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>C. Channel Contribution</Typography>
+                <Typography variant="body2" color="text.secondary">Kontribusi revenue per channel berdasarkan costcenter.</Typography>
+              </Box>
+              <Stack direction="row" spacing={1}>
+                <Button size="small" variant={channelChartType === 'bar' ? 'contained' : 'outlined'} onClick={() => setChannelChartType('bar')}>Bar</Button>
+                <Button size="small" variant={channelChartType === 'pie' ? 'contained' : 'outlined'} onClick={() => setChannelChartType('pie')}>Pie</Button>
+                <Button variant="outlined" size="small" startIcon={<Refresh />} onClick={fetchChannelContribution}>Refresh</Button>
+              </Stack>
+            </Stack>
+
+            {channelError && <Alert severity="warning" sx={{ mb: 2 }}>{channelError}</Alert>}
+            {channelLoading ? (
+              <Box sx={{ py: 5, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>
+            ) : contributionChartRows.length === 0 ? (
+              <Alert severity="info">Belum ada data channel contribution untuk periode ini.</Alert>
+            ) : (
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={6}>
+                  <Box sx={{ width: '100%', minHeight: 280, overflowX: 'auto' }}>
+                    {channelChartType === 'bar' ? (
+                      <BarChart
+                        width={520}
+                        height={280}
+                        data={contributionChartRows}
+                        margin={{ top: 10, right: 20, left: 10, bottom: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="channel" tick={{ fontSize: 11 }} />
+                        <YAxis tickFormatter={(v) => new Intl.NumberFormat('id-ID', { notation: 'compact' }).format(v)} tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(v) => formatCurrency(v)} />
+                        <Bar dataKey="revenue" radius={[6, 6, 0, 0]}>
+                          {contributionChartRows.map((entry, idx) => (
+                            <Cell key={entry.channel} fill={chartColors[idx % chartColors.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    ) : (
+                      <PieChart width={420} height={280}>
+                        <Pie
+                          data={contributionChartRows}
+                          dataKey="revenue"
+                          nameKey="channel"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={50}
+                          outerRadius={95}
+                        >
+                          {contributionChartRows.map((entry, idx) => (
+                            <Cell key={entry.channel} fill={chartColors[idx % chartColors.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(v) => formatCurrency(v)} />
+                      </PieChart>
+                    )}
+                  </Box>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 700 }}>Channel</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 700 }}>Revenue</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 700 }}>% Contribution</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {channelRows.map((row, idx) => (
+                          <TableRow key={row.channel} hover>
+                            <TableCell>
+                              <Stack direction="row" spacing={1} alignItems="center">
+                                <Box
+                                  sx={{
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: '50%',
+                                    backgroundColor: chartColors[idx % chartColors.length],
+                                    flexShrink: 0,
+                                  }}
+                                />
+                                <Typography variant="body2">{row.channel}</Typography>
+                              </Stack>
+                            </TableCell>
+                            <TableCell align="right">{formatCurrency(row.revenue)}</TableCell>
+                            <TableCell align="right">{formatNumber(row.contribution)}%</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Grid>
+              </Grid>
+            )}
+          </Paper>
+
+          <Box
+            sx={{
+              mb: 3,
+              display: 'grid',
+              gap: 2,
+              gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+              alignItems: 'stretch',
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Paper sx={{ p: 2, borderRadius: 2.5, height: '100%' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>D. Business Health Alert</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                  Ringkasan indikator operasional untuk periode {kpiPeriod.toUpperCase()}.
+                </Typography>
+
+                {healthError && <Alert severity="warning" sx={{ mb: 1.5 }}>{healthError}</Alert>}
+                {healthLoading ? (
+                  <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}><CircularProgress size={24} /></Box>
+                ) : (
+                  <Table size="small">
+                    <TableBody>
+                      <TableRow>
+                        <TableCell>Out of Stock SKU</TableCell>
+                        <TableCell align="right"><Chip size="small" label={formatNumber(healthData?.out_of_stock_sku)} /></TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>SKU &lt; 14 hari stok</TableCell>
+                        <TableCell align="right"><Chip size="small" color="warning" label={formatNumber(healthData?.sku_lt_14_days_stock)} /></TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>Slow Moving SKU</TableCell>
+                        <TableCell align="right"><Chip size="small" label={formatNumber(healthData?.slow_moving_sku)} /></TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>Cancel Rate</TableCell>
+                        <TableCell align="right"><Chip size="small" label={`${formatNumber(healthData?.cancel_rate)}%`} /></TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>Margin &lt; Target</TableCell>
+                        <TableCell align="right"><Chip size="small" color="error" label={formatNumber(healthData?.margin_below_target_sku)} /></TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                )}
+              </Paper>
+            </Box>
+
+            <Box sx={{ minWidth: 0 }}>
+              <Paper sx={{ p: 2, borderRadius: 2.5, height: '100%' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>E. Top 5 SKU by Revenue</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>SKU dengan kontribusi revenue tertinggi.</Typography>
+
+                {snapshotError && <Alert severity="warning" sx={{ mb: 1.5 }}>{snapshotError}</Alert>}
+                {snapshotLoading ? (
+                  <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}><CircularProgress size={24} /></Box>
+                ) : (
+                  <Table size="small" sx={{ tableLayout: 'fixed' }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ fontWeight: 700 }}>SKU</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700 }}>Revenue</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700 }}>Margin</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {(snapshotData.top_revenue || []).map((row) => (
+                        <TableRow key={`top-${row.item_id}`} hover>
+                          <TableCell>
+                            <Typography variant="body2" noWrap title={row.item_code || `ITEM-${row.item_id}`}>
+                              {row.item_code || `ITEM-${row.item_id}`}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">{formatCurrency(row.revenue)}</TableCell>
+                          <TableCell align="right">{formatNumber(row.margin_pct)}%</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </Paper>
+            </Box>
+
+            <Box sx={{ minWidth: 0 }}>
+              <Paper sx={{ p: 2, borderRadius: 2.5, height: '100%' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>F. Bottom 5 SKU (Risk)</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>SKU risiko berdasarkan STR rendah dan stok tinggi.</Typography>
+
+                {snapshotError && <Alert severity="warning" sx={{ mb: 1.5 }}>{snapshotError}</Alert>}
+                {snapshotLoading ? (
+                  <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}><CircularProgress size={24} /></Box>
+                ) : (
+                  <Table size="small" sx={{ tableLayout: 'fixed' }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ fontWeight: 700 }}>SKU</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700 }}>STR %</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700 }}>Stock</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {(snapshotData.bottom_risk || []).map((row) => (
+                        <TableRow key={`risk-${row.item_id}`} hover>
+                          <TableCell>
+                            <Typography variant="body2" noWrap title={row.item_code || `ITEM-${row.item_id}`}>
+                              {row.item_code || `ITEM-${row.item_id}`}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">{formatNumber(row.str_percent)}%</TableCell>
+                          <TableCell align="right">{formatNumber(row.stock_qty)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </Paper>
+            </Box>
+          </Box>
         </>
       )}
 
       {activeTab === 1 && (
         <>
           <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Roadmap Ops & Inventory</Typography>
-            <Stack spacing={0.8}>
-              {opsSections.map((item) => (
-                <Typography key={item} variant="body2" color="text.secondary">- {item}</Typography>
-              ))}
-            </Stack>
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5 }}>A. Inventory KPI</Typography>
+            <Grid container spacing={1.2}>
+              <Grid item xs={12} sm={6} md={3}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
+                  <Typography variant="caption" color="text.secondary">Total SKU Aktif</Typography>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(opsSummary.totalSKUActive)}</Typography>
+                </Paper>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
+                  <Typography variant="caption" color="text.secondary">Total Stock (pcs)</Typography>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(opsSummary.totalStock)}</Typography>
+                </Paper>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
+                  <Typography variant="caption" color="text.secondary">Rata-rata DOI</Typography>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(opsSummary.averageDOI)} hari</Typography>
+                </Paper>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
+                  <Typography variant="caption" color="text.secondary">SKU Urgent (&lt;14 hari)</Typography>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(opsSummary.urgentCount)}</Typography>
+                </Paper>
+              </Grid>
+            </Grid>
           </Paper>
+
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid item xs={12} md={6}>
+              <Paper sx={{ p: 2.5, borderRadius: 2.5, height: '100%' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>B. Low & Out of Stock Alert</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                  Prioritas item berdasarkan status Out of Stock dan DOI &lt; 14 hari.
+                </Typography>
+
+                <Stack spacing={1.5}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.8 }}>Out of Stock ({formatNumber(opsSummary.outOfStockCount)})</Typography>
+                    {opsSummary.outOfStockRows.length === 0 ? (
+                      <Typography variant="caption" color="text.secondary">Tidak ada item out of stock pada scope aktif.</Typography>
+                    ) : (
+                      <Stack spacing={0.6}>
+                        {opsSummary.outOfStockRows.map((row) => (
+                          <Typography key={`oos-${row.key}`} variant="caption">{row.itemCode} • {row.warehouse}</Typography>
+                        ))}
+                      </Stack>
+                    )}
+                  </Box>
+
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.8 }}>DOI &lt; 14 hari</Typography>
+                    {opsSummary.lowStockRows.length === 0 ? (
+                      <Typography variant="caption" color="text.secondary">Tidak ada item DOI rendah pada scope aktif.</Typography>
+                    ) : (
+                      <Stack spacing={0.6}>
+                        {opsSummary.lowStockRows.map((row) => (
+                          <Typography key={`low-${row.key}`} variant="caption">
+                            {row.itemCode} • {row.warehouse} • DOI {formatNumber(row.doi)}
+                          </Typography>
+                        ))}
+                      </Stack>
+                    )}
+                  </Box>
+                </Stack>
+              </Paper>
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <Paper sx={{ p: 2.5, borderRadius: 2.5, height: '100%' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>C. Size / Dimensi Performance</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                  Dimensi produk (length/width/height/depth/weight) sudah tersedia di data sumber. Visual detail size performance akan ditambahkan pada iterasi berikutnya.
+                </Typography>
+
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2}>
+                  <Chip color="success" label="Dimensi masteritemuom: READY" />
+                  <Chip color="warning" label="Chart size mix: NEXT" />
+                </Stack>
+              </Paper>
+            </Grid>
+          </Grid>
 
           <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
         <Stack
@@ -323,7 +921,7 @@ export default function BiPlanningView() {
           sx={{ mb: 2 }}
         >
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>DOI Simulator</Typography>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>D. DOI Simulator</Typography>
             <Typography variant="body2" color="text.secondary">
               Rumus: DOI = Stock On Hand / Average Net Sold per Day, dengan aturan transaksi sesuai mapping yang Anda berikan.
             </Typography>
@@ -351,6 +949,19 @@ export default function BiPlanningView() {
             >
               <MenuItem value="global">Global</MenuItem>
               <MenuItem value="warehouse">Per Gudang</MenuItem>
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label="Status"
+              value={doiStatusFilter}
+              onChange={(e) => setDoiStatusFilter(e.target.value)}
+              sx={{ minWidth: 180 }}
+            >
+              <MenuItem value="all">Semua Status</MenuItem>
+              {doiStatusOptions.map((status) => (
+                <MenuItem key={status} value={status}>{status}</MenuItem>
+              ))}
             </TextField>
             <Button variant="outlined" startIcon={<Refresh />} onClick={fetchDOI}>
               Refresh
@@ -380,14 +991,14 @@ export default function BiPlanningView() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {doiRows.length === 0 ? (
+                {filteredDoiRows.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8}>
-                      <Typography variant="body2" color="text.secondary">Belum ada data DOI yang dapat ditampilkan.</Typography>
+                      <Typography variant="body2" color="text.secondary">Belum ada data DOI yang cocok dengan filter saat ini.</Typography>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  doiRows.slice(0, 200).map((row) => (
+                  pagedDoiRows.map((row) => (
                     <TableRow key={`${row.item_id}-${row.warehouse_id || 'global'}`} hover>
                       <TableCell>
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>{row.item_code || `ITEM-${row.item_id}`}</Typography>
@@ -407,6 +1018,19 @@ export default function BiPlanningView() {
                 )}
               </TableBody>
             </Table>
+            <TablePagination
+              component="div"
+              count={filteredDoiRows.length}
+              page={doiPage}
+              onPageChange={(_, newPage) => setDoiPage(newPage)}
+              rowsPerPage={doiRowsPerPage}
+              onRowsPerPageChange={(e) => {
+                setDoiRowsPerPage(Number(e.target.value));
+                setDoiPage(0);
+              }}
+              rowsPerPageOptions={[10, 25, 50, 100]}
+              labelRowsPerPage="Baris per halaman"
+            />
           </TableContainer>
         )}
           </Paper>
@@ -416,45 +1040,254 @@ export default function BiPlanningView() {
       {activeTab === 2 && (
         <>
           <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Roadmap Product & Sales</Typography>
-            <Stack spacing={0.8}>
-              {productSections.map((item) => (
-                <Typography key={item} variant="body2" color="text.secondary">- {item}</Typography>
-              ))}
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              justifyContent="space-between"
+              alignItems={{ xs: 'stretch', md: 'center' }}
+              spacing={1.5}
+            >
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>A. Sales KPI</Typography>
+              <Stack direction="row" spacing={1}>
+                <Button
+                  size="small"
+                  variant={kpiPeriod === 'today' ? 'contained' : 'outlined'}
+                  onClick={() => setKpiPeriod('today')}
+                >
+                  Today
+                </Button>
+                <Button
+                  size="small"
+                  variant={kpiPeriod === 'mtd' ? 'contained' : 'outlined'}
+                  onClick={() => setKpiPeriod('mtd')}
+                >
+                  MTD
+                </Button>
+              </Stack>
             </Stack>
+
+            {productKPIError && <Alert severity="warning" sx={{ mt: 2 }}>{productKPIError}</Alert>}
+            {productKPILoading ? (
+              <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>
+            ) : (
+              <Grid container spacing={1.2} sx={{ mt: 0.5 }}>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
+                    <Typography variant="caption" color="text.secondary">Revenue</Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatCurrency(productKPI?.revenue)}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
+                    <Typography variant="caption" color="text.secondary">Units</Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(productKPI?.units)}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
+                    <Typography variant="caption" color="text.secondary">Avg Margin</Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(productKPI?.avg_margin)}%</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Paper variant="outlined" sx={uniformKpiCardSx}>
+                    <Typography variant="caption" color="text.secondary">Sell-through</Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(productKPI?.sell_through)}%</Typography>
+                  </Paper>
+                </Grid>
+              </Grid>
+            )}
           </Paper>
 
-          <Paper sx={{ p: 2.5, borderRadius: 2.5 }}>
-        <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Data Checklist Yang Perlu Anda Info-kan</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Tabel berikut menunjukkan kesiapan data saat ini dan tambahan data yang dibutuhkan agar model report BI bisa lengkap.
-        </Typography>
-
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 700 }}>Area Data</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Data Diperlukan</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Sumber / Info yang Dibutuhkan</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {dataChecklist.map((row) => (
-                <TableRow key={row.area} hover>
-                  <TableCell sx={{ fontWeight: 600 }}>{row.area}</TableCell>
-                  <TableCell>
-                    <Chip size="small" color={statusColor(row.status)} label={row.status} />
-                  </TableCell>
-                  <TableCell>{row.needed}</TableCell>
-                  <TableCell>{row.source}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+          <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5 }}>B. Category Performance</Typography>
+            {categoryError && <Alert severity="warning" sx={{ mb: 2 }}>{categoryError}</Alert>}
+            {categoryLoading ? (
+              <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>
+            ) : categoryRows.length === 0 ? (
+              <Alert severity="info">Belum ada data category performance pada periode ini.</Alert>
+            ) : (
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={6}>
+                  <Box sx={{ width: '100%', minHeight: 280, overflowX: 'auto' }}>
+                    <BarChart width={560} height={280} data={categoryChartRows} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="category" tick={{ fontSize: 11 }} />
+                      <YAxis tickFormatter={(v) => new Intl.NumberFormat('id-ID', { notation: 'compact' }).format(v)} tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v) => formatCurrency(v)} />
+                      <Bar dataKey="revenue" radius={[6, 6, 0, 0]}>
+                        {categoryChartRows.map((row, idx) => (
+                          <Cell key={`cat-${row.category}`} fill={chartColors[idx % chartColors.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 700 }}>Category</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 700 }}>Revenue</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 700 }}>Units</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 700 }}>Margin</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {categoryRows.map((row) => (
+                          <TableRow key={row.category} hover>
+                            <TableCell>{row.category}</TableCell>
+                            <TableCell align="right">{formatCurrency(row.revenue)}</TableCell>
+                            <TableCell align="right">{formatNumber(row.units)}</TableCell>
+                            <TableCell align="right">{formatNumber(row.margin_pct)}%</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Grid>
+              </Grid>
+            )}
           </Paper>
+
+          <Box
+            sx={{
+              mb: 3,
+              display: 'grid',
+              gap: 2,
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              alignItems: 'stretch',
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Paper sx={{ p: 2.5, borderRadius: 2.5, height: '100%', width: '100%' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5 }}>C. Product Lifecycle</Typography>
+                {lifecycleError && <Alert severity="warning" sx={{ mb: 2 }}>{lifecycleError}</Alert>}
+                {lifecycleLoading ? (
+                  <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>
+                ) : lifecycleChartRows.length === 0 ? (
+                  <Alert severity="info">Belum ada data lifecycle.</Alert>
+                ) : (
+                  <Box sx={{ width: '100%', height: 280 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={lifecycleChartRows} dataKey="count" nameKey="phase" cx="50%" cy="50%" innerRadius={50} outerRadius={95}>
+                          {lifecycleChartRows.map((row, idx) => (
+                            <Cell key={`lc-${row.phase}`} fill={chartColors[idx % chartColors.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(v) => formatNumber(v)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </Box>
+                )}
+              </Paper>
+            </Box>
+
+            <Box sx={{ minWidth: 0 }}>
+              <Paper sx={{ p: 2.5, borderRadius: 2.5, height: '100%', width: '100%' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5 }}>D. Lifecycle Breakdown</Typography>
+                {lifecycleLoading ? (
+                  <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}><CircularProgress size={24} /></Box>
+                ) : (
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ fontWeight: 700 }}>Phase</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700 }}>SKU</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700 }}>%</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {lifecycleRows.map((row) => (
+                        <TableRow key={row.phase} hover>
+                          <TableCell>{row.phase}</TableCell>
+                          <TableCell align="right">{formatNumber(row.count)}</TableCell>
+                          <TableCell align="right">{formatNumber(row.percent)}%</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </Paper>
+            </Box>
+          </Box>
+
+          <Box
+            sx={{
+              mb: 3,
+              display: 'grid',
+              gap: 2,
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+              alignItems: 'stretch',
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Paper sx={{ p: 2.5, borderRadius: 2.5, height: '100%', width: '100%' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5 }}>E. Top Product</Typography>
+                {performanceError && <Alert severity="warning" sx={{ mb: 2 }}>{performanceError}</Alert>}
+                {performanceLoading ? (
+                  <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}><CircularProgress size={24} /></Box>
+                ) : (
+                  <Table size="small" sx={{ tableLayout: 'fixed' }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ fontWeight: 700 }}>SKU</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700 }}>Revenue</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700 }}>Margin</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {performanceData.top.map((row) => (
+                        <TableRow key={`top-${row.item_id}`} hover>
+                          <TableCell>
+                            <Typography variant="body2" noWrap title={row.item_code || `ITEM-${row.item_id}`}>
+                              {row.item_code || `ITEM-${row.item_id}`}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">{formatCurrency(row.revenue)}</TableCell>
+                          <TableCell align="right">{formatNumber(row.margin_pct)}%</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </Paper>
+            </Box>
+
+            <Box sx={{ minWidth: 0 }}>
+              <Paper sx={{ p: 2.5, borderRadius: 2.5, height: '100%', width: '100%' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5 }}>F. Slow Product</Typography>
+                {performanceLoading ? (
+                  <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}><CircularProgress size={24} /></Box>
+                ) : (
+                  <Table size="small" sx={{ tableLayout: 'fixed' }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ fontWeight: 700 }}>SKU</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700 }}>STR %</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700 }}>Stock</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {performanceData.slow.map((row) => (
+                        <TableRow key={`slow-${row.item_id}`} hover>
+                          <TableCell>
+                            <Typography variant="body2" noWrap title={row.item_code || `ITEM-${row.item_id}`}>
+                              {row.item_code || `ITEM-${row.item_id}`}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">{formatNumber(row.str_percent)}%</TableCell>
+                          <TableCell align="right">{formatNumber(row.stock_qty)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </Paper>
+            </Box>
+          </Box>
+
         </>
       )}
     </Box>

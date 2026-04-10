@@ -41,7 +41,7 @@ export default function DashboardLayout() {
       : [
           { text: 'Daily View', icon: <CalendarToday />, path: '/daily' },
           { text: 'Annually View', icon: <InsertChart />, path: '/annually' },
-          { text: 'BI Planning', icon: <Insights />, path: '/bi-planning' },
+          { text: 'BI Dashboard', icon: <Insights />, path: '/bi-planning' },
           { text: 'Appearance Settings', icon: <Settings />, path: '/settings' },
           { text: 'Synchronize Data', icon: <Sync />, path: '/sync' },
         ]),
