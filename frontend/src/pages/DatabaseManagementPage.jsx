@@ -28,6 +28,7 @@ import CloudDownload from '@mui/icons-material/CloudDownload';
 import Refresh from '@mui/icons-material/Refresh';
 import Edit from '@mui/icons-material/Edit';
 import Add from '@mui/icons-material/Add';
+import Delete from '@mui/icons-material/Delete';
 import { useAuth } from '../context/AuthContext';
 
 function emptySource(name = '') {
@@ -211,6 +212,32 @@ export default function DatabaseManagementPage() {
     }
   };
 
+  const handleDeleteConfig = async (name) => {
+    const targetName = (name || '').toUpperCase();
+    if (!targetName) return;
+
+    const confirmed = window.confirm(`Hapus konfigurasi database ${targetName}?`);
+    if (!confirmed) return;
+
+    setError('');
+    setSuccess('');
+    try {
+      const res = await fetchWithAuth(`/api/settings/databases/${targetName}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal menghapus konfigurasi database');
+
+      setSuccess(data.message || `Konfigurasi ${targetName} berhasil dihapus`);
+      await loadItems();
+      if ((form.name || editingName || '').toUpperCase() === targetName) {
+        setEditorOpen(false);
+      }
+    } catch (err) {
+      setError(err.message || 'Gagal menghapus konfigurasi');
+    }
+  };
+
   const editingItem = items.find((it) => it.name === (form.name || editingName));
 
   if (loading) {
@@ -322,6 +349,16 @@ export default function DatabaseManagementPage() {
                     >
                       Edit
                     </Button>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      color="error"
+                      startIcon={<Delete />}
+                      onClick={() => handleDeleteConfig(item.name)}
+                      disabled={item.running}
+                    >
+                      Hapus
+                    </Button>
                   </Stack>
                 </TableCell>
               </TableRow>
@@ -411,6 +448,17 @@ export default function DatabaseManagementPage() {
           <Button onClick={() => setEditorOpen(false)}>
             Tutup
           </Button>
+          {editingName && (
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<Delete />}
+              onClick={() => handleDeleteConfig(editingName)}
+              disabled={!!editingItem?.running}
+            >
+              Hapus Konfigurasi
+            </Button>
+          )}
           <Button
             variant="contained"
             startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <Save />}

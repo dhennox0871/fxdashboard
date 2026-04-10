@@ -379,6 +379,36 @@ func SetDatabaseStatus(c *fiber.Ctx) error {
 	})
 }
 
+func DeleteDatabaseSource(c *fiber.Ctx) error {
+	if err := ensureManagementAccess(c); err != nil {
+		return err
+	}
+
+	name := normalizeDBName(c.Params("name"))
+	if name == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Nama database tidak valid"})
+	}
+
+	sources, err := loadDatabaseSources()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal membaca konfigurasi database: " + err.Error()})
+	}
+
+	if _, ok := sources[name]; !ok {
+		return c.Status(404).JSON(fiber.Map{"error": "Konfigurasi database tidak ditemukan"})
+	}
+
+	delete(sources, name)
+	if err := saveDatabaseSources(sources); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal menghapus konfigurasi database: " + err.Error()})
+	}
+
+	return c.JSON(fiber.Map{
+		"message":  "Konfigurasi database " + name + " berhasil dihapus",
+		"database": name,
+	})
+}
+
 func IsDatabaseEnabledForDashboard(name string) bool {
 	sources, err := loadDatabaseSources()
 	if err != nil {

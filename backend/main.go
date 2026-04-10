@@ -55,6 +55,7 @@ func main() {
 	api.Get("/settings/sync-status", GetSyncStatus)
 	api.Get("/settings/databases", GetDatabaseManagementList)
 	api.Post("/settings/databases", UpsertDatabaseSource)
+	api.Delete("/settings/databases/:name", DeleteDatabaseSource)
 	api.Post("/settings/databases/:name/status", SetDatabaseStatus)
 	api.Post("/settings/databases/:name/sync", PostSyncDatabaseByName)
 
