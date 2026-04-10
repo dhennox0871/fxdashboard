@@ -78,20 +78,6 @@ func ensureManagementAccess(c *fiber.Ctx) error {
 
 func defaultDatabaseSource(name string) DatabaseSource {
 	upper := normalizeDBName(name)
-	script := "migrate_base.py"
-	mode := "incremental"
-
-	switch upper {
-	case "OSLANK":
-		script = "migrate_to_sqlite.py"
-		mode = ""
-	case "SKSMRT":
-		script = "migrate_sksmrt.py"
-		mode = "incremental"
-	case "OSLSRG", "OSLKEN":
-		script = "migrate_oslsrg_server.py"
-		mode = ""
-	}
 
 	return DatabaseSource{
 		Name:     upper,
@@ -99,8 +85,8 @@ func defaultDatabaseSource(name string) DatabaseSource {
 		Database: strings.ToLower(upper),
 		Username: "",
 		Password: "",
-		Script:   script,
-		Mode:     mode,
+		Script:   "migrate_base.py",
+		Mode:     "incremental",
 		Enabled:  true,
 	}
 }
@@ -318,9 +304,7 @@ func UpsertDatabaseSource(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Host, database, user, dan password wajib diisi"})
 	}
 
-	if req.Script == "" {
-		req.Script = defaultDatabaseSource(req.Name).Script
-	}
+	req.Script = "migrate_base.py"
 	if req.Mode == "" {
 		req.Mode = defaultDatabaseSource(req.Name).Mode
 	}
@@ -412,29 +396,13 @@ func IsDatabaseEnabledForDashboard(name string) bool {
 
 func resolveSyncScriptAndArgs(name string, source DatabaseSource) (string, []string) {
 	dbNameLower := strings.ToLower(name)
-	script := strings.TrimSpace(source.Script)
+	script := "migrate_base.py"
 	mode := strings.ToLower(strings.TrimSpace(source.Mode))
-	if script == "" {
-		script = defaultDatabaseSource(name).Script
+	args := []string{dbNameLower}
+	if mode == "full" {
+		args = append(args, "--full")
 	}
-
-	switch script {
-	case "migrate_sksmrt.py":
-		if mode != "full" {
-			mode = "incremental"
-		}
-		return script, []string{"--mode", mode}
-	case "migrate_oslsrg_server.py":
-		return script, []string{"--database", dbNameLower}
-	case "migrate_base.py":
-		args := []string{dbNameLower}
-		if mode == "full" {
-			args = append(args, "--full")
-		}
-		return script, args
-	default:
-		return script, []string{}
-	}
+	return script, args
 }
 
 func PostSyncDatabaseByName(c *fiber.Ctx) error {

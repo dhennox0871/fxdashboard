@@ -37,7 +37,7 @@ function emptySource(name = '') {
     database: name ? name.toLowerCase() : '',
     username: '',
     password: '',
-    script: '',
+    script: 'migrate_base.py',
     mode: 'incremental',
     enabled: true,
   };
@@ -109,6 +109,7 @@ export default function DatabaseManagementPage() {
       const payload = {
         ...form,
         name: (form.name || '').toUpperCase(),
+        script: 'migrate_base.py',
         mode: form.mode || 'incremental',
         enabled: form.enabled !== false,
       };
@@ -381,15 +382,6 @@ export default function DatabaseManagementPage() {
                 value={form.password}
                 onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
                 fullWidth
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                label="Script"
-                value={form.script}
-                onChange={(e) => setForm((prev) => ({ ...prev, script: e.target.value }))}
-                fullWidth
-                placeholder="migrate_base.py"
               />
             </Grid>
             <Grid item xs={12} sm={6}>
