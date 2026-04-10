@@ -6,6 +6,7 @@ import AppearanceSettings from './pages/AppearanceSettings';
 import LoginPage from './pages/LoginPage';
 import SyncPage from './pages/SyncPage';
 import DatabaseManagementPage from './pages/DatabaseManagementPage';
+import BiPlanningView from './pages/BiPlanningView';
 import { WidgetConfigProvider } from './context/WidgetConfigContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
@@ -32,6 +33,7 @@ function AppRoutes() {
           <Route index element={<Navigate to={defaultPath} replace />} />
           <Route path="daily" element={<DailyView />} />
           <Route path="annually" element={<AnnuallyView />} />
+          <Route path="bi-planning" element={<BiPlanningView />} />
           <Route path="settings" element={<AppearanceSettings />} />
           <Route path="sync" element={<SyncPage />} />
           <Route path="db-management" element={<ManagementRoute><DatabaseManagementPage /></ManagementRoute>} />
