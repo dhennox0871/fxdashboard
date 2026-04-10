@@ -71,6 +71,10 @@ func PostLogin(c *fiber.Ctx) error {
 		})
 	}
 
+	if strings.EqualFold(strings.TrimSpace(req.Username), "cs") {
+		return c.Status(401).JSON(fiber.Map{"error": "Username atau password salah"})
+	}
+
 	if req.Database == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "Silakan pilih database"})
 	}

@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, TextField, Button, Paper, Alert, CircularProgress, MenuItem } from '@mui/material';
+import InputAdornment from '@mui/material/InputAdornment';
+import IconButton from '@mui/material/IconButton';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -13,6 +17,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingDb, setLoadingDb] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
   const isManagementLogin = username.trim().toLowerCase() === 'cs';
 
   useEffect(() => {
@@ -112,12 +117,25 @@ export default function LoginPage() {
           />
           <TextField
             label="Password"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             fullWidth
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             sx={{ mb: 3 }}
             variant="outlined"
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    edge="end"
+                  >
+                    {showPassword ? <VisibilityOff /> : <Visibility />}
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
           />
           <Button
             type="submit"
