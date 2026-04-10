@@ -24,6 +24,129 @@ type DOIItem struct {
 	Status        string   `json:"status"`
 }
 
+type BIExecutiveKPIResponse struct {
+	Period       string  `json:"period"`
+	Revenue      float64 `json:"revenue"`
+	Orders       int64   `json:"orders"`
+	UnitsSold    float64 `json:"units_sold"`
+	GrossProfit  float64 `json:"gross_profit"`
+	GrossMargin  float64 `json:"gross_margin"`
+	AOV          float64 `json:"aov"`
+	TargetMargin float64 `json:"target_margin"`
+}
+
+func parseBIKPIType(c *fiber.Ctx) string {
+	v := strings.ToLower(strings.TrimSpace(c.Query("period", "mtd")))
+	if v == "today" {
+		return "today"
+	}
+	return "mtd"
+}
+
+func columnExists(db *sql.DB, tableName, columnName string) bool {
+	rows, err := db.Query("PRAGMA table_info(" + tableName + ")")
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	var (
+		cid     int
+		name    string
+		colType string
+		notNull int
+		dflt    sql.NullString
+		pk      int
+	)
+	for rows.Next() {
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
+			continue
+		}
+		if strings.EqualFold(name, columnName) {
+			return true
+		}
+	}
+	return false
+}
+
+func GetBIExecutiveKPI(c *fiber.Ctx) error {
+	db := GetDB(c)
+	if db == nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Database tidak tersedia"})
+	}
+
+	period := parseBIKPIType(c)
+	periodFilter := "strftime('%Y-%m', lt.entrydate) = strftime('%Y-%m', 'now', 'localtime')"
+	if period == "today" {
+		periodFilter = "DATE(lt.entrydate) = DATE('now', 'localtime')"
+	}
+
+	cogsExpr := "0"
+	if columnExists(db, "logtransline", "totalhpp") {
+		cogsExpr = `CASE
+			WHEN lt.transtypeid IN (10, 18) AND ltl.qty < 0 THEN ABS(COALESCE(ltl.totalhpp, 0))
+			WHEN lt.transtypeid IN (11, 19) AND ltl.qty > 0 THEN -ABS(COALESCE(ltl.totalhpp, 0))
+			ELSE 0
+		END`
+	} else if columnExists(db, "logtransline", "hpp") {
+		cogsExpr = `CASE
+			WHEN lt.transtypeid IN (10, 18) AND ltl.qty < 0 THEN ABS(COALESCE(ltl.hpp, 0) * COALESCE(ltl.qty, 0))
+			WHEN lt.transtypeid IN (11, 19) AND ltl.qty > 0 THEN -ABS(COALESCE(ltl.hpp, 0) * COALESCE(ltl.qty, 0))
+			ELSE 0
+		END`
+	}
+
+	query := `SELECT
+		COALESCE(SUM(
+			CASE
+				WHEN lt.transtypeid IN (10, 18) AND ltl.qty < 0 THEN ABS(COALESCE(ltl.netvalue, 0))
+				WHEN lt.transtypeid IN (11, 19) AND ltl.qty > 0 THEN -ABS(COALESCE(ltl.netvalue, 0))
+				ELSE 0
+			END
+		), 0) AS revenue,
+		COALESCE(SUM(
+			CASE
+				WHEN lt.transtypeid IN (10, 18) AND ltl.qty < 0 THEN ABS(COALESCE(ltl.qty, 0))
+				WHEN lt.transtypeid IN (11, 19) AND ltl.qty > 0 THEN -ABS(COALESCE(ltl.qty, 0))
+				ELSE 0
+			END
+		), 0) AS units_sold,
+		COALESCE(SUM(` + cogsExpr + `), 0) AS total_cogs,
+		COALESCE(COUNT(DISTINCT CASE WHEN lt.transtypeid IN (10, 18) THEN lt.logtransid END), 0) AS orders
+	FROM logtrans lt
+	JOIN logtransline ltl ON ltl.logtransid = lt.logtransid
+	WHERE ` + periodFilter + `
+		AND lt.transtypeid IN (10, 11, 18, 19)`
+
+	var revenue, units, cogs float64
+	var orders int64
+	if err := db.QueryRow(query).Scan(&revenue, &units, &cogs, &orders); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal menghitung KPI BI: " + err.Error()})
+	}
+
+	grossProfit := revenue - cogs
+	grossMargin := 0.0
+	if revenue > 0 {
+		grossMargin = (grossProfit / revenue) * 100
+	}
+
+	aov := 0.0
+	if orders > 0 {
+		aov = revenue / float64(orders)
+	}
+
+	return c.JSON(BIExecutiveKPIResponse{
+		Period:       period,
+		Revenue:      revenue,
+		Orders:       orders,
+		UnitsSold:    units,
+		GrossProfit:  grossProfit,
+		GrossMargin:  grossMargin,
+		AOV:          aov,
+		TargetMargin: 40,
+	})
+}
+
 func parseDOIDays(c *fiber.Ctx) int {
 	raw := strings.TrimSpace(c.Query("days", "30"))
 	d, err := strconv.Atoi(raw)

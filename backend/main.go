@@ -48,6 +48,7 @@ func main() {
 	api.Get("/annually/kpi", GetAnnuallyKPI)
 	api.Get("/annually/chart", GetAnnuallyChart)
 	api.Get("/annually/cashier", GetAnnuallyCashier)
+	api.Get("/bi/executive-kpi", GetBIExecutiveKPI)
 	api.Get("/bi/doi", GetBIDOI)
 
 	api.Get("/settings/company", GetCompanyInfo)

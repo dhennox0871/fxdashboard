@@ -101,11 +101,31 @@ function statusColor(status) {
 
 export default function BiPlanningView() {
   const { fetchWithAuth } = useAuth();
+  const [kpiPeriod, setKpiPeriod] = useState('mtd');
+  const [kpiData, setKpiData] = useState(null);
+  const [loadingKPI, setLoadingKPI] = useState(true);
+  const [kpiError, setKpiError] = useState('');
   const [days, setDays] = useState(30);
   const [scope, setScope] = useState('global');
   const [doiRows, setDoiRows] = useState([]);
   const [loadingDOI, setLoadingDOI] = useState(true);
   const [doiError, setDoiError] = useState('');
+
+  const fetchExecutiveKPI = async () => {
+    setLoadingKPI(true);
+    setKpiError('');
+    try {
+      const res = await fetchWithAuth(`/api/bi/executive-kpi?period=${kpiPeriod}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal memuat KPI executive');
+      setKpiData(data);
+    } catch (err) {
+      setKpiError(err.message || 'Gagal memuat KPI executive');
+      setKpiData(null);
+    } finally {
+      setLoadingKPI(false);
+    }
+  };
 
   const fetchDOI = async () => {
     setLoadingDOI(true);
@@ -127,9 +147,22 @@ export default function BiPlanningView() {
     fetchDOI();
   }, [days, scope]);
 
+  useEffect(() => {
+    fetchExecutiveKPI();
+  }, [kpiPeriod]);
+
   const formatNumber = (value) => {
     const n = Number(value || 0);
     return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
+  };
+
+  const formatCurrency = (value) => {
+    const n = Number(value || 0);
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      maximumFractionDigits: 0,
+    }).format(n);
   };
 
   const statusChipColor = (status) => {
@@ -152,6 +185,87 @@ export default function BiPlanningView() {
       <Alert severity="info" sx={{ mb: 3 }}>
         Saran nama menu: BI Planning. Tujuannya sebagai ruang perencanaan report tanpa mengganggu Daily dan Annually yang sudah aktif.
       </Alert>
+
+      <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          justifyContent="space-between"
+          alignItems={{ xs: 'stretch', md: 'center' }}
+          spacing={1.2}
+          sx={{ mb: 2 }}
+        >
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>A. KPI Cards (Top Section)</Typography>
+            <Typography variant="body2" color="text.secondary">Letak paling atas, 1 baris. Toggle Today / MTD.</Typography>
+          </Box>
+          <Stack direction="row" spacing={1}>
+            <Button
+              size="small"
+              variant={kpiPeriod === 'today' ? 'contained' : 'outlined'}
+              onClick={() => setKpiPeriod('today')}
+            >
+              Today
+            </Button>
+            <Button
+              size="small"
+              variant={kpiPeriod === 'mtd' ? 'contained' : 'outlined'}
+              onClick={() => setKpiPeriod('mtd')}
+            >
+              MTD
+            </Button>
+          </Stack>
+        </Stack>
+
+        {kpiError && <Alert severity="warning" sx={{ mb: 2 }}>{kpiError}</Alert>}
+
+        {loadingKPI ? (
+          <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <Grid container spacing={1.2}>
+            <Grid item xs={12} sm={6} md={4} lg={2}>
+              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary">Revenue {kpiPeriod.toUpperCase()}</Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatCurrency(kpiData?.revenue)}</Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={6} md={4} lg={2}>
+              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary">Orders {kpiPeriod.toUpperCase()}</Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(kpiData?.orders)}</Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={6} md={4} lg={2}>
+              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary">Units Sold</Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(kpiData?.units_sold)}</Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={6} md={4} lg={2}>
+              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary">Gross Profit</Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatCurrency(kpiData?.gross_profit)}</Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={6} md={4} lg={2}>
+              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary">Gross Margin %</Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  {formatNumber(kpiData?.gross_margin)}%
+                </Typography>
+                <Typography variant="caption" color="text.secondary">Target {'>='} 40%</Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={6} md={4} lg={2}>
+              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary">AOV</Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatCurrency(kpiData?.aov)}</Typography>
+              </Paper>
+            </Grid>
+          </Grid>
+        )}
+      </Paper>
 
       <Grid container spacing={2} sx={{ mb: 3 }}>
         {reportBlocks.map((block) => (
