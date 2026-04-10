@@ -9,12 +9,14 @@ import {
   MenuItem,
   Paper,
   Stack,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
@@ -24,22 +26,28 @@ import Sell from '@mui/icons-material/Sell';
 import Refresh from '@mui/icons-material/Refresh';
 import { useAuth } from '../context/AuthContext';
 
-const reportBlocks = [
-  {
-    title: 'Owner Executive',
-    icon: <AutoGraph color="primary" />,
-    items: ['KPI cards (Revenue, Orders, AOV, Margin)', 'Revenue trend (line/area)', 'Channel contribution (bar/pie)', 'Business health alert table'],
-  },
-  {
-    title: 'Ops & Inventory',
-    icon: <Inventory2 color="primary" />,
-    items: ['Inventory KPI (stock, value, DOI)', 'Inventory health table (DOI status)', 'Low & Out of stock alert', 'Inventory aging bucket'],
-  },
-  {
-    title: 'Product & Sales',
-    icon: <Sell color="primary" />,
-    items: ['Category performance', 'Product lifecycle table', 'Top & slow product list', 'Promo impact and ROI'],
-  },
+const ownerSections = [
+  'A. KPI cards (sudah live)',
+  'B. Revenue trend (line chart)',
+  'C. Channel contribution (bar/pie dari costcenter)',
+  'D. Business health alert (stock/cancel/margin)',
+  'E. Product snapshot (Top 5 dan Bottom 5 SKU)',
+];
+
+const opsSections = [
+  'A. Inventory KPI (Total SKU, Total Stock, Inventory Value, DOI)',
+  'B. Inventory Health core table (sudah live DOI simulator)',
+  'C. Low & out of stock alert',
+  'D. Inventory aging (pending, menunggu movement data)',
+  'E. Size/dimensi performance',
+];
+
+const productSections = [
+  'A. Sales KPI (Revenue, Units, Avg Margin, Sell-through)',
+  'B. Category performance',
+  'C. Product lifecycle',
+  'D. Top & slow product',
+  'E. Promo impact (ditunda)',
 ];
 
 const dataChecklist = [
@@ -101,6 +109,7 @@ function statusColor(status) {
 
 export default function BiPlanningView() {
   const { fetchWithAuth } = useAuth();
+  const [activeTab, setActiveTab] = useState(0);
   const [kpiPeriod, setKpiPeriod] = useState('mtd');
   const [kpiData, setKpiData] = useState(null);
   const [loadingKPI, setLoadingKPI] = useState(true);
@@ -183,109 +192,129 @@ export default function BiPlanningView() {
       </Box>
 
       <Alert severity="info" sx={{ mb: 3 }}>
-        Saran nama menu: BI Planning. Tujuannya sebagai ruang perencanaan report tanpa mengganggu Daily dan Annually yang sudah aktif.
+        BI Planning dipisah dari dashboard utama. Di bawah ini dibagi 3 tab sesuai PDF: Owner, Ops & Inventory, Product & Sales.
       </Alert>
 
-      <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
-        <Stack
-          direction={{ xs: 'column', md: 'row' }}
-          justifyContent="space-between"
-          alignItems={{ xs: 'stretch', md: 'center' }}
-          spacing={1.2}
-          sx={{ mb: 2 }}
+      <Paper sx={{ mb: 3, borderRadius: 2.5 }}>
+        <Tabs
+          value={activeTab}
+          onChange={(_, value) => setActiveTab(value)}
+          variant="scrollable"
+          scrollButtons="auto"
+          sx={{ px: 1 }}
         >
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>A. KPI Cards (Top Section)</Typography>
-            <Typography variant="body2" color="text.secondary">Letak paling atas, 1 baris. Toggle Today / MTD.</Typography>
-          </Box>
-          <Stack direction="row" spacing={1}>
-            <Button
-              size="small"
-              variant={kpiPeriod === 'today' ? 'contained' : 'outlined'}
-              onClick={() => setKpiPeriod('today')}
-            >
-              Today
-            </Button>
-            <Button
-              size="small"
-              variant={kpiPeriod === 'mtd' ? 'contained' : 'outlined'}
-              onClick={() => setKpiPeriod('mtd')}
-            >
-              MTD
-            </Button>
-          </Stack>
-        </Stack>
-
-        {kpiError && <Alert severity="warning" sx={{ mb: 2 }}>{kpiError}</Alert>}
-
-        {loadingKPI ? (
-          <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
-            <CircularProgress />
-          </Box>
-        ) : (
-          <Grid container spacing={1.2}>
-            <Grid item xs={12} sm={6} md={4} lg={2}>
-              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
-                <Typography variant="caption" color="text.secondary">Revenue {kpiPeriod.toUpperCase()}</Typography>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatCurrency(kpiData?.revenue)}</Typography>
-              </Paper>
-            </Grid>
-            <Grid item xs={12} sm={6} md={4} lg={2}>
-              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
-                <Typography variant="caption" color="text.secondary">Orders {kpiPeriod.toUpperCase()}</Typography>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(kpiData?.orders)}</Typography>
-              </Paper>
-            </Grid>
-            <Grid item xs={12} sm={6} md={4} lg={2}>
-              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
-                <Typography variant="caption" color="text.secondary">Units Sold</Typography>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(kpiData?.units_sold)}</Typography>
-              </Paper>
-            </Grid>
-            <Grid item xs={12} sm={6} md={4} lg={2}>
-              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
-                <Typography variant="caption" color="text.secondary">Gross Profit</Typography>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatCurrency(kpiData?.gross_profit)}</Typography>
-              </Paper>
-            </Grid>
-            <Grid item xs={12} sm={6} md={4} lg={2}>
-              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
-                <Typography variant="caption" color="text.secondary">Gross Margin %</Typography>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                  {formatNumber(kpiData?.gross_margin)}%
-                </Typography>
-                <Typography variant="caption" color="text.secondary">Target {'>='} 40%</Typography>
-              </Paper>
-            </Grid>
-            <Grid item xs={12} sm={6} md={4} lg={2}>
-              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
-                <Typography variant="caption" color="text.secondary">AOV</Typography>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatCurrency(kpiData?.aov)}</Typography>
-              </Paper>
-            </Grid>
-          </Grid>
-        )}
+          <Tab icon={<AutoGraph />} iconPosition="start" label="Owner (Executive View)" />
+          <Tab icon={<Inventory2 />} iconPosition="start" label="Ops & Inventory" />
+          <Tab icon={<Sell />} iconPosition="start" label="Product & Sales" />
+        </Tabs>
       </Paper>
 
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        {reportBlocks.map((block) => (
-          <Grid item xs={12} md={4} key={block.title}>
-            <Paper sx={{ p: 2.5, borderRadius: 2.5, height: '100%' }}>
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-                {block.icon}
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>{block.title}</Typography>
-              </Stack>
-              <Stack spacing={1}>
-                {block.items.map((item) => (
-                  <Typography key={item} variant="body2" color="text.secondary">- {item}</Typography>
-                ))}
-              </Stack>
-            </Paper>
-          </Grid>
-        ))}
-      </Grid>
+      {activeTab === 0 && (
+        <>
+          <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Roadmap Owner Dashboard</Typography>
+            <Stack spacing={0.8}>
+              {ownerSections.map((item) => (
+                <Typography key={item} variant="body2" color="text.secondary">- {item}</Typography>
+              ))}
+            </Stack>
+          </Paper>
 
-      <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
+          <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              justifyContent="space-between"
+              alignItems={{ xs: 'stretch', md: 'center' }}
+              spacing={1.2}
+              sx={{ mb: 2 }}
+            >
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>A. KPI Cards (Top Section)</Typography>
+                <Typography variant="body2" color="text.secondary">Letak paling atas, 1 baris. Toggle Today / MTD.</Typography>
+              </Box>
+              <Stack direction="row" spacing={1}>
+                <Button
+                  size="small"
+                  variant={kpiPeriod === 'today' ? 'contained' : 'outlined'}
+                  onClick={() => setKpiPeriod('today')}
+                >
+                  Today
+                </Button>
+                <Button
+                  size="small"
+                  variant={kpiPeriod === 'mtd' ? 'contained' : 'outlined'}
+                  onClick={() => setKpiPeriod('mtd')}
+                >
+                  MTD
+                </Button>
+              </Stack>
+            </Stack>
+
+            {kpiError && <Alert severity="warning" sx={{ mb: 2 }}>{kpiError}</Alert>}
+
+            {loadingKPI ? (
+              <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
+                <CircularProgress />
+              </Box>
+            ) : (
+              <Grid container spacing={1.2}>
+                <Grid item xs={12} sm={6} md={4} lg={2}>
+                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary">Revenue {kpiPeriod.toUpperCase()}</Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatCurrency(kpiData?.revenue)}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} sm={6} md={4} lg={2}>
+                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary">Orders {kpiPeriod.toUpperCase()}</Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(kpiData?.orders)}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} sm={6} md={4} lg={2}>
+                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary">Units Sold</Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatNumber(kpiData?.units_sold)}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} sm={6} md={4} lg={2}>
+                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary">Gross Profit</Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatCurrency(kpiData?.gross_profit)}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} sm={6} md={4} lg={2}>
+                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary">Gross Margin %</Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                      {formatNumber(kpiData?.gross_margin)}%
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">Target {'>='} 40%</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} sm={6} md={4} lg={2}>
+                  <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary">AOV</Typography>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{formatCurrency(kpiData?.aov)}</Typography>
+                  </Paper>
+                </Grid>
+              </Grid>
+            )}
+          </Paper>
+        </>
+      )}
+
+      {activeTab === 1 && (
+        <>
+          <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Roadmap Ops & Inventory</Typography>
+            <Stack spacing={0.8}>
+              {opsSections.map((item) => (
+                <Typography key={item} variant="body2" color="text.secondary">- {item}</Typography>
+              ))}
+            </Stack>
+          </Paper>
+
+          <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
         <Stack
           direction={{ xs: 'column', md: 'row' }}
           spacing={1.5}
@@ -380,9 +409,22 @@ export default function BiPlanningView() {
             </Table>
           </TableContainer>
         )}
-      </Paper>
+          </Paper>
+        </>
+      )}
 
-      <Paper sx={{ p: 2.5, borderRadius: 2.5 }}>
+      {activeTab === 2 && (
+        <>
+          <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Roadmap Product & Sales</Typography>
+            <Stack spacing={0.8}>
+              {productSections.map((item) => (
+                <Typography key={item} variant="body2" color="text.secondary">- {item}</Typography>
+              ))}
+            </Stack>
+          </Paper>
+
+          <Paper sx={{ p: 2.5, borderRadius: 2.5 }}>
         <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Data Checklist Yang Perlu Anda Info-kan</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Tabel berikut menunjukkan kesiapan data saat ini dan tambahan data yang dibutuhkan agar model report BI bisa lengkap.
@@ -412,7 +454,9 @@ export default function BiPlanningView() {
             </TableBody>
           </Table>
         </TableContainer>
-      </Paper>
+          </Paper>
+        </>
+      )}
     </Box>
   );
 }
