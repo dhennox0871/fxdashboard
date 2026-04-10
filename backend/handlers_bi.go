@@ -14,6 +14,7 @@ type DOIItem struct {
 	ItemID        int      `json:"item_id"`
 	ItemCode      string   `json:"item_code"`
 	ItemName      string   `json:"item_name"`
+	BaseUOM       string   `json:"base_uom"`
 	WarehouseID   *int     `json:"warehouse_id,omitempty"`
 	WarehouseCode string   `json:"warehouse_code,omitempty"`
 	StockQty      float64  `json:"stock_qty"`
@@ -104,13 +105,23 @@ func GetBIDOI(c *fiber.Ctx) error {
 			CASE WHEN ? = 'warehouse' THEN COALESCE(ltl.warehouseid, 0) ELSE 0 END AS scope_warehouseid,
 			SUM(
 				CASE
-					WHEN lt.transtypeid IN (10, 18) AND ltl.qty < 0 THEN -ltl.qty
-					WHEN lt.transtypeid IN (11, 19) AND ltl.qty > 0 THEN -ltl.qty
+					WHEN lt.transtypeid IN (10, 18) AND ltl.qty < 0 THEN (-ltl.qty) *
+						CASE
+							WHEN COALESCE(ltl.uomid, 0) = COALESCE(mi.uomid, 0) OR COALESCE(ltl.uomid, 0) = 0 THEN 1
+							ELSE COALESCE(muom.conversionqty, 1)
+						END
+					WHEN lt.transtypeid IN (11, 19) AND ltl.qty > 0 THEN (-ltl.qty) *
+						CASE
+							WHEN COALESCE(ltl.uomid, 0) = COALESCE(mi.uomid, 0) OR COALESCE(ltl.uomid, 0) = 0 THEN 1
+							ELSE COALESCE(muom.conversionqty, 1)
+						END
 					ELSE 0
 				END
 			) AS net_sold_qty
 		FROM logtransline ltl
 		JOIN logtrans lt ON lt.logtransid = ltl.logtransid
+		LEFT JOIN masteritem mi ON mi.itemid = ltl.itemid
+		LEFT JOIN masteritemuom muom ON muom.itemid = ltl.itemid AND muom.uomid = ltl.uomid
 		WHERE lt.entrydate >= datetime('now', ?)
 			AND lt.transtypeid IN (10, 11, 18, 19)
 		GROUP BY ltl.itemid, CASE WHEN ? = 'warehouse' THEN COALESCE(ltl.warehouseid, 0) ELSE 0 END
@@ -119,6 +130,7 @@ func GetBIDOI(c *fiber.Ctx) error {
 		s.itemid,
 		COALESCE(mi.itemcode, '') AS itemcode,
 		COALESCE(mi.itemname, '') AS itemname,
+		COALESCE(mu.uomcode, '') AS base_uom,
 		s.scope_warehouseid,
 		COALESCE(mw.warehousecode, CASE WHEN s.scope_warehouseid = 0 THEN 'GLOBAL' ELSE 'WH-' || s.scope_warehouseid END) AS warehousecode,
 		COALESCE(s.stock_qty, 0) AS stock_qty,
@@ -126,6 +138,7 @@ func GetBIDOI(c *fiber.Ctx) error {
 	FROM stock s
 	LEFT JOIN sales sa ON sa.itemid = s.itemid AND sa.scope_warehouseid = s.scope_warehouseid
 	LEFT JOIN masteritem mi ON mi.itemid = s.itemid
+	LEFT JOIN masteruom mu ON mu.uomid = mi.uomid
 	LEFT JOIN masterwarehouse mw ON mw.warehouseid = s.scope_warehouseid
 	WHERE COALESCE(s.stock_qty, 0) <> 0 OR COALESCE(sa.net_sold_qty, 0) <> 0
 	ORDER BY stock_qty DESC, net_sold_qty DESC, itemcode ASC`
@@ -144,6 +157,7 @@ func GetBIDOI(c *fiber.Ctx) error {
 			&item.ItemID,
 			&item.ItemCode,
 			&item.ItemName,
+			&item.BaseUOM,
 			&scopeWarehouseID,
 			&item.WarehouseCode,
 			&item.StockQty,

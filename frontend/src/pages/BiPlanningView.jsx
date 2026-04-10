@@ -89,7 +89,7 @@ const dataChecklist = [
     area: 'Size Performance',
     status: 'Ready',
     needed: 'Dimensi produk (length/width/depth/height/weight/volume)',
-    source: 'masteritemuom linked by itemid',
+    source: 'masteritemuom linked by itemid, base UOM from masteritem.uomid -> masteruom',
   },
 ];
 
@@ -227,6 +227,7 @@ export default function BiPlanningView() {
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 700 }}>Item</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>UOM Dasar</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Gudang</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 700 }}>Stock</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 700 }}>Net Sold ({days}h)</TableCell>
@@ -238,7 +239,7 @@ export default function BiPlanningView() {
               <TableBody>
                 {doiRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7}>
+                    <TableCell colSpan={8}>
                       <Typography variant="body2" color="text.secondary">Belum ada data DOI yang dapat ditampilkan.</Typography>
                     </TableCell>
                   </TableRow>
@@ -249,6 +250,7 @@ export default function BiPlanningView() {
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>{row.item_code || `ITEM-${row.item_id}`}</Typography>
                         <Typography variant="caption" color="text.secondary">{row.item_name || '-'}</Typography>
                       </TableCell>
+                      <TableCell>{row.base_uom || '-'}</TableCell>
                       <TableCell>{row.warehouse_code || 'GLOBAL'}</TableCell>
                       <TableCell align="right">{formatNumber(row.stock_qty)}</TableCell>
                       <TableCell align="right">{formatNumber(row.net_sold_qty)}</TableCell>

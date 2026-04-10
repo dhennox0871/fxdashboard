@@ -93,6 +93,7 @@ class UniversalMigrator:
         cur.execute("DROP TABLE IF EXISTS mastercostcenter")
         cur.execute("DROP TABLE IF EXISTS masterrepresentative")
         cur.execute("DROP TABLE IF EXISTS masterwarehouse")
+        cur.execute("DROP TABLE IF EXISTS masteruom")
         cur.execute("DROP TABLE IF EXISTS masteritemuom")
         cur.execute("DROP TABLE IF EXISTS stockview")
         cur.execute("DROP TABLE IF EXISTS flexnotesetting")
@@ -115,6 +116,7 @@ class UniversalMigrator:
             logtranslineid INTEGER PRIMARY KEY,
             logtransid INTEGER,
             itemid INTEGER,
+            uomid INTEGER,
             warehouseid INTEGER,
             qty INTEGER,
             price REAL,
@@ -124,11 +126,12 @@ class UniversalMigrator:
             totalhpp REAL
         )""")
         # Master Tables
-        cur.execute("CREATE TABLE masteritem (itemid INTEGER PRIMARY KEY, itemgroupid INTEGER, itemcode TEXT, itemname TEXT)")
+        cur.execute("CREATE TABLE masteritem (itemid INTEGER PRIMARY KEY, itemgroupid INTEGER, uomid INTEGER, itemcode TEXT, itemname TEXT)")
         cur.execute("CREATE TABLE masteritemgroup (itemgroupid INTEGER PRIMARY KEY, itemgroupcode TEXT, description TEXT)")
         cur.execute("CREATE TABLE mastercostcenter (costcenterid INTEGER PRIMARY KEY, costcentercode TEXT, description TEXT)")
         cur.execute("CREATE TABLE masterrepresentative (representativeid INTEGER PRIMARY KEY, representativecode TEXT, name TEXT)")
         cur.execute("CREATE TABLE masterwarehouse (warehouseid INTEGER PRIMARY KEY, warehousecode TEXT, description TEXT)")
+        cur.execute("CREATE TABLE masteruom (uomid INTEGER PRIMARY KEY, uomcode TEXT, description TEXT)")
         cur.execute("""CREATE TABLE masteritemuom (
             itemuomid INTEGER PRIMARY KEY,
             itemid INTEGER,
@@ -158,8 +161,9 @@ class UniversalMigrator:
             "masteritemgroup": ["itemgroupid", "itemgroupcode", "description"],
             "mastercostcenter": ["costcenterid", "costcentercode", "description"],
             "masterrepresentative": ["representativeid", "representativecode", "name"],
-            "masteritem": ["itemid", "itemgroupid", "itemcode", "itemname"],
+            "masteritem": ["itemid", "itemgroupid", "uomid", "itemcode", "itemname"],
             "masterwarehouse": ["warehouseid", "warehousecode", "description"],
+            "masteruom": ["uomid", "uomcode", "description"],
             "masteritemuom": ["itemuomid", "itemid", "uomid", "conversionqty", "length", "width", "height", "depth", "weight", "volume"],
             "flexnotesetting": ["flexnotesettingid", "settingtypecode", "datachar1", "datachar2"],
         }
@@ -303,6 +307,7 @@ class UniversalMigrator:
             cols = self.source_columns["logtransline"]
             p_select = [
                 "ltl.logtranslineid", "ltl.logtransid", "ltl.itemid",
+                "ltl.uomid" if "uomid" in cols else "NULL",
                 "ltl.warehouseid" if "warehouseid" in cols else "NULL",
                 "ltl.quantity" if "quantity" in cols else ("ltl.qty" if "qty" in cols else ("ltl.qtyinput" if "qtyinput" in cols else "0")),
                 "ltl.price" if "price" in cols else ("ltl.priceinput" if "priceinput" in cols else "0"),
@@ -330,8 +335,8 @@ class UniversalMigrator:
                 
                 if converted:
                     self.lc.executemany("""INSERT OR REPLACE INTO logtransline
-                        (logtranslineid, logtransid, itemid, warehouseid, qty, price, netvalue, pajakvalue, hpp, totalhpp)
-                        VALUES (?,?,?,?,?,?,?,?,?,?)""", converted)
+                        (logtranslineid, logtransid, itemid, uomid, warehouseid, qty, price, netvalue, pajakvalue, hpp, totalhpp)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?)""", converted)
                     self.lite.commit()
                     total_migrated += len(rows)
                 
