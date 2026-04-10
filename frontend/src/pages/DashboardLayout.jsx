@@ -37,7 +37,6 @@ export default function DashboardLayout() {
     ...(user?.role === 'superadmin'
       ? [
           { text: 'Database Management', icon: <Storage />, path: '/db-management' },
-          { text: 'BI Planning', icon: <Insights />, path: '/bi-planning' },
         ]
       : [
           { text: 'Daily View', icon: <CalendarToday />, path: '/daily' },

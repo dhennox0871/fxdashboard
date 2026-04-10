@@ -21,6 +21,12 @@ function ManagementRoute({ children }) {
   return user?.role === 'superadmin' ? children : <Navigate to="/daily" replace />;
 }
 
+function NonManagementRoute({ children }) {
+  const { isLoggedIn, user } = useAuth();
+  if (!isLoggedIn) return <Navigate to="/login" replace />;
+  return user?.role === 'superadmin' ? <Navigate to="/db-management" replace /> : children;
+}
+
 function AppRoutes() {
   const { isLoggedIn, user } = useAuth();
   const defaultPath = user?.role === 'superadmin' ? '/db-management' : '/daily';
@@ -33,7 +39,7 @@ function AppRoutes() {
           <Route index element={<Navigate to={defaultPath} replace />} />
           <Route path="daily" element={<DailyView />} />
           <Route path="annually" element={<AnnuallyView />} />
-          <Route path="bi-planning" element={<BiPlanningView />} />
+          <Route path="bi-planning" element={<NonManagementRoute><BiPlanningView /></NonManagementRoute>} />
           <Route path="settings" element={<AppearanceSettings />} />
           <Route path="sync" element={<SyncPage />} />
           <Route path="db-management" element={<ManagementRoute><DatabaseManagementPage /></ManagementRoute>} />

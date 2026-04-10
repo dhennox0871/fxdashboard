@@ -92,6 +92,9 @@ class UniversalMigrator:
         cur.execute("DROP TABLE IF EXISTS masteritemgroup")
         cur.execute("DROP TABLE IF EXISTS mastercostcenter")
         cur.execute("DROP TABLE IF EXISTS masterrepresentative")
+        cur.execute("DROP TABLE IF EXISTS masterwarehouse")
+        cur.execute("DROP TABLE IF EXISTS masteritemuom")
+        cur.execute("DROP TABLE IF EXISTS stockview")
         cur.execute("DROP TABLE IF EXISTS flexnotesetting")
         cur.execute("DROP TABLE IF EXISTS coreapplication")
 
@@ -112,22 +115,41 @@ class UniversalMigrator:
             logtranslineid INTEGER PRIMARY KEY,
             logtransid INTEGER,
             itemid INTEGER,
+            warehouseid INTEGER,
             qty INTEGER,
             price REAL,
             netvalue REAL,
-            pajakvalue REAL
+            pajakvalue REAL,
+            hpp REAL,
+            totalhpp REAL
         )""")
         # Master Tables
         cur.execute("CREATE TABLE masteritem (itemid INTEGER PRIMARY KEY, itemgroupid INTEGER, itemcode TEXT, itemname TEXT)")
         cur.execute("CREATE TABLE masteritemgroup (itemgroupid INTEGER PRIMARY KEY, itemgroupcode TEXT, description TEXT)")
         cur.execute("CREATE TABLE mastercostcenter (costcenterid INTEGER PRIMARY KEY, costcentercode TEXT, description TEXT)")
         cur.execute("CREATE TABLE masterrepresentative (representativeid INTEGER PRIMARY KEY, representativecode TEXT, name TEXT)")
+        cur.execute("CREATE TABLE masterwarehouse (warehouseid INTEGER PRIMARY KEY, warehousecode TEXT, description TEXT)")
+        cur.execute("""CREATE TABLE masteritemuom (
+            itemuomid INTEGER PRIMARY KEY,
+            itemid INTEGER,
+            uomid INTEGER,
+            conversionqty REAL,
+            length REAL,
+            width REAL,
+            height REAL,
+            depth REAL,
+            weight REAL,
+            volume REAL
+        )""")
+        cur.execute("CREATE TABLE stockview (itemid INTEGER, warehouseid INTEGER, debet REAL, credit REAL)")
         cur.execute("CREATE TABLE flexnotesetting (flexnotesettingid INTEGER PRIMARY KEY, settingtypecode TEXT, datachar1 TEXT, datachar2 TEXT)")
         cur.execute("CREATE TABLE coreapplication (flag INTEGER PRIMARY KEY, data TEXT)")
         
         cur.execute("CREATE INDEX IF NOT EXISTS idx_lt_date ON logtrans(entrydate)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_lt_type ON logtrans(transtypeid)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_ltl_id ON logtransline(logtransid)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_ltl_item_wh ON logtransline(itemid, warehouseid)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_stock_item_wh ON stockview(itemid, warehouseid)")
         self.lite.commit()
 
     def migrate_masters(self):
@@ -137,6 +159,8 @@ class UniversalMigrator:
             "mastercostcenter": ["costcenterid", "costcentercode", "description"],
             "masterrepresentative": ["representativeid", "representativecode", "name"],
             "masteritem": ["itemid", "itemgroupid", "itemcode", "itemname"],
+            "masterwarehouse": ["warehouseid", "warehousecode", "description"],
+            "masteritemuom": ["itemuomid", "itemid", "uomid", "conversionqty", "length", "width", "height", "depth", "weight", "volume"],
             "flexnotesetting": ["flexnotesettingid", "settingtypecode", "datachar1", "datachar2"],
         }
         
@@ -170,6 +194,22 @@ class UniversalMigrator:
                 print(f"  Warning: Skipping master table {table}: {e}")
             
         self.lite.commit()
+
+    def migrate_stockview(self):
+        print(f"[{self.target_db_name}] Synchronizing stockview...")
+        try:
+            self.lc.execute("DELETE FROM stockview")
+            self.mc.execute("SELECT itemid, warehouseid, debet, credit FROM stockview")
+            rows = self.mc.fetchall()
+            if rows:
+                self.lc.executemany(
+                    "INSERT INTO stockview (itemid, warehouseid, debet, credit) VALUES (?,?,?,?)",
+                    [convert_row(r) for r in rows]
+                )
+            self.lite.commit()
+            print(f"  - stockview: {len(rows)} rows synced.")
+        except Exception as e:
+            print(f"  Warning: Skipping stockview: {e}")
 
     def migrate_chunked_logtrans(self):
         print(f"      Syncing logtrans (Full: {self.is_full_sync})...")
@@ -263,10 +303,13 @@ class UniversalMigrator:
             cols = self.source_columns["logtransline"]
             p_select = [
                 "ltl.logtranslineid", "ltl.logtransid", "ltl.itemid",
+                "ltl.warehouseid" if "warehouseid" in cols else "NULL",
                 "ltl.quantity" if "quantity" in cols else ("ltl.qty" if "qty" in cols else ("ltl.qtyinput" if "qtyinput" in cols else "0")),
                 "ltl.price" if "price" in cols else ("ltl.priceinput" if "priceinput" in cols else "0"),
                 "ltl.netvalue" if "netvalue" in cols else ("ltl.netvalueinput" if "netvalueinput" in cols else "0"),
-                "ltl.pajakvalue" if "pajakvalue" in cols else "0"
+                "ltl.pajakvalue" if "pajakvalue" in cols else "0",
+                "ltl.hpp" if "hpp" in cols else "0",
+                "ltl.totalhpp" if "totalhpp" in cols else "0"
             ]
 
             sel_str = ", ".join(p_select)
@@ -287,8 +330,8 @@ class UniversalMigrator:
                 
                 if converted:
                     self.lc.executemany("""INSERT OR REPLACE INTO logtransline
-                        (logtranslineid, logtransid, itemid, qty, price, netvalue, pajakvalue)
-                        VALUES (?,?,?,?,?,?,?)""", converted)
+                        (logtranslineid, logtransid, itemid, warehouseid, qty, price, netvalue, pajakvalue, hpp, totalhpp)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)""", converted)
                     self.lite.commit()
                     total_migrated += len(rows)
                 
@@ -308,6 +351,7 @@ def run_sync(db_name, is_full=False):
     if migrator.connect():
         migrator.setup_schema()
         migrator.migrate_masters()
+        migrator.migrate_stockview()
         migrator.migrate_chunked_logtrans()
         migrator.migrate_chunked_logtransline()
         migrator.finalize()
