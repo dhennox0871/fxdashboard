@@ -9,6 +9,7 @@ import Logout from '@mui/icons-material/Logout';
 import Sync from '@mui/icons-material/Sync';
 import Storage from '@mui/icons-material/Storage';
 import Insights from '@mui/icons-material/Insights';
+import Group from '@mui/icons-material/Group';
 import { useAuth } from '../context/AuthContext';
 
 const drawerWidth = 240;
@@ -33,18 +34,25 @@ export default function DashboardLayout() {
     setMobileOpen(!mobileOpen);
   };
 
+  const baseUserNavItems = [
+    { key: 'daily', text: 'Daily View', icon: <CalendarToday />, path: '/daily' },
+    { key: 'annually', text: 'Annually View', icon: <InsertChart />, path: '/annually' },
+    { key: 'bi-planning', text: 'BI Dashboard', icon: <Insights />, path: '/bi-planning' },
+    { key: 'settings', text: 'Appearance Settings', icon: <Settings />, path: '/settings' },
+    { key: 'sync', text: 'Synchronize Data', icon: <Sync />, path: '/sync' },
+    { key: 'manage-users', text: 'Manage User', icon: <Group />, path: '/manage-users' },
+  ];
+
+  const allowedMenus = Array.isArray(user?.menu_access) ? user.menu_access : [];
+  const isMasterAdmin = !!user?.is_masteradmin;
+
   const navItems = [
     ...(user?.role === 'superadmin'
       ? [
           { text: 'Database Management', icon: <Storage />, path: '/db-management' },
+          { text: 'Manage User', icon: <Group />, path: '/manage-users' },
         ]
-      : [
-          { text: 'Daily View', icon: <CalendarToday />, path: '/daily' },
-          { text: 'Annually View', icon: <InsertChart />, path: '/annually' },
-          { text: 'BI Dashboard', icon: <Insights />, path: '/bi-planning' },
-          { text: 'Appearance Settings', icon: <Settings />, path: '/settings' },
-          { text: 'Synchronize Data', icon: <Sync />, path: '/sync' },
-        ]),
+      : baseUserNavItems.filter((item) => isMasterAdmin || allowedMenus.includes(item.key))),
   ];
 
   const drawer = (

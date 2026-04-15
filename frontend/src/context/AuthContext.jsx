@@ -8,7 +8,15 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(() => localStorage.getItem('dash_token'));
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('dash_user');
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    const parsed = JSON.parse(saved);
+    return {
+      ...parsed,
+      is_masteradmin: !!parsed?.is_masteradmin,
+      menu_access: Array.isArray(parsed?.menu_access)
+        ? parsed.menu_access
+        : ['daily', 'annually', 'bi-planning', 'settings', 'sync', 'manage-users'],
+    };
   });
 
   const isLoggedIn = !!token;
@@ -27,9 +35,21 @@ export const AuthProvider = ({ children }) => {
 
     const data = await res.json();
     localStorage.setItem('dash_token', data.token);
-    localStorage.setItem('dash_user', JSON.stringify({ username: data.username, role: data.role, database: data.database }));
+    localStorage.setItem('dash_user', JSON.stringify({
+      username: data.username,
+      role: data.role,
+      database: data.database,
+      is_masteradmin: !!data.is_masteradmin,
+      menu_access: Array.isArray(data.menu_access) ? data.menu_access : [],
+    }));
     setToken(data.token);
-    setUser({ username: data.username, role: data.role, database: data.database });
+    setUser({
+      username: data.username,
+      role: data.role,
+      database: data.database,
+      is_masteradmin: !!data.is_masteradmin,
+      menu_access: Array.isArray(data.menu_access) ? data.menu_access : [],
+    });
     return data;
   };
 

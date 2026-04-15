@@ -22,6 +22,7 @@ func main() {
 	if err := DBPool.Init(dbDir); err != nil {
 		log.Fatalf("Failed to initialize database pool: %v", err)
 	}
+	EnsureDashboardUsersForAllDatabases()
 
 	app := fiber.New()
 
@@ -68,6 +69,14 @@ func main() {
 	api.Delete("/settings/databases/:name", DeleteDatabaseSource)
 	api.Post("/settings/databases/:name/status", SetDatabaseStatus)
 	api.Post("/settings/databases/:name/sync", PostSyncDatabaseByName)
+
+	api.Get("/users", GetManageUsers)
+	api.Get("/users/databases", GetManageUserDatabases)
+	api.Post("/users", CreateManageUser)
+	api.Post("/users/change-password", ChangeOwnPassword)
+	api.Post("/users/:username/reset-password", ResetManageUserPassword)
+	api.Delete("/users/:username", DeleteManageUser)
+	api.Post("/users/:username/menus", UpdateManageUserMenus)
 
 	port := os.Getenv("PORT")
 	if port == "" {

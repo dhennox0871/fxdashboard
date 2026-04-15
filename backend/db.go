@@ -146,13 +146,80 @@ func (p *DatabasePool) List() []DatabaseInfo {
 // ========== Auth Helpers ==========
 
 type DashboardUser struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Role     string `json:"role"`
+	Username      string   `json:"username"`
+	Password      string   `json:"password"`
+	Role          string   `json:"role"`
+	IsMasterAdmin bool     `json:"is_masteradmin,omitempty"`
+	MenuAccess    []string `json:"menu_access,omitempty"`
 }
 
 type DashboardUsersData struct {
 	Users []DashboardUser `json:"users"`
+}
+
+var defaultDashboardMenus = []string{
+	"daily",
+	"annually",
+	"bi-planning",
+	"settings",
+	"sync",
+	"manage-users",
+}
+
+func cloneMenuAccess(menu []string) []string {
+	out := make([]string, 0, len(menu))
+	out = append(out, menu...)
+	return out
+}
+
+func normalizeMenuAccess(menu []string) []string {
+	if len(menu) == 0 {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(menu))
+	for _, m := range menu {
+		mv := strings.TrimSpace(strings.ToLower(m))
+		if mv == "" {
+			continue
+		}
+		if _, ok := seen[mv]; ok {
+			continue
+		}
+		seen[mv] = struct{}{}
+		out = append(out, mv)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func normalizeDashboardUsers(users []DashboardUser) []DashboardUser {
+	normalized := make([]DashboardUser, 0, len(users))
+	for _, u := range users {
+		nu := u
+		nu.Username = strings.TrimSpace(nu.Username)
+		if nu.Role == "" {
+			nu.Role = "admin"
+		}
+
+		isDefaultMaster := strings.EqualFold(nu.Username, "admin") && nu.Password == "admin123"
+		if isDefaultMaster {
+			nu.IsMasterAdmin = true
+		}
+
+		if nu.IsMasterAdmin {
+			nu.MenuAccess = cloneMenuAccess(defaultDashboardMenus)
+		} else {
+			// Backward compatibility: old users without menu config keep access to legacy menus.
+			if len(nu.MenuAccess) == 0 {
+				nu.MenuAccess = []string{"daily", "annually", "bi-planning", "settings", "sync", "manage-users"}
+			}
+			nu.MenuAccess = normalizeMenuAccess(nu.MenuAccess)
+		}
+
+		normalized = append(normalized, nu)
+	}
+	return normalized
 }
 
 func GetDashboardUsers(db *sql.DB) ([]DashboardUser, error) {
@@ -166,11 +233,11 @@ func GetDashboardUsers(db *sql.DB) ([]DashboardUser, error) {
 	if err := json.Unmarshal([]byte(data), &usersData); err != nil {
 		return nil, err
 	}
-	return usersData.Users, nil
+	return normalizeDashboardUsers(usersData.Users), nil
 }
 
 func SaveDashboardUsers(db *sql.DB, users []DashboardUser) error {
-	usersData := DashboardUsersData{Users: users}
+	usersData := DashboardUsersData{Users: normalizeDashboardUsers(users)}
 	payload, err := json.Marshal(usersData)
 	if err != nil {
 		return err
@@ -186,6 +253,35 @@ func SaveDashboardUsers(db *sql.DB, users []DashboardUser) error {
 
 	_, err = db.Exec("INSERT OR REPLACE INTO coreapplication (flag, data) VALUES (88888, ?)", string(payload))
 	return err
+}
+
+func EnsureDashboardUsersForAllDatabases() {
+	for _, info := range DBPool.List() {
+		db := DBPool.Get(info.Name)
+		if db == nil {
+			continue
+		}
+
+		users, err := GetDashboardUsers(db)
+		if err != nil {
+			if err == sql.ErrNoRows || strings.Contains(strings.ToLower(err.Error()), "no such table: coreapplication") {
+				defaultUsers := []DashboardUser{{Username: "admin", Password: "admin123", Role: "admin"}}
+				if seedErr := SaveDashboardUsers(db, defaultUsers); seedErr != nil {
+					log.Printf("Warning: gagal seed default user untuk %s: %v", info.Name, seedErr)
+					continue
+				}
+				log.Printf("Default user admin diinisialisasi untuk database %s", info.Name)
+				continue
+			}
+
+			log.Printf("Warning: gagal baca user dashboard untuk %s: %v", info.Name, err)
+			continue
+		}
+
+		if saveErr := SaveDashboardUsers(db, users); saveErr != nil {
+			log.Printf("Warning: gagal normalisasi user dashboard untuk %s: %v", info.Name, saveErr)
+		}
+	}
 }
 
 // ========== Response Structs ==========

@@ -20,10 +20,12 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	Token    string `json:"token"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
-	Database string `json:"database"`
+	Token         string   `json:"token"`
+	Username      string   `json:"username"`
+	Role          string   `json:"role"`
+	Database      string   `json:"database"`
+	IsMasterAdmin bool     `json:"is_masteradmin"`
+	MenuAccess    []string `json:"menu_access"`
 }
 
 // GET /api/databases - public, returns list of available databases
@@ -51,11 +53,14 @@ func PostLogin(c *fiber.Ctx) error {
 	}
 
 	if strings.EqualFold(strings.TrimSpace(req.Username), "cs") && req.Password == "timunlunak" {
+		superMenus := []string{"db-management", "manage-users"}
 		claims := jwt.MapClaims{
-			"username": "cs",
-			"role":     "superadmin",
-			"database": "MANAGER",
-			"exp":      time.Now().Add(24 * time.Hour).Unix(),
+			"username":       "cs",
+			"role":           "superadmin",
+			"database":       "MANAGER",
+			"is_masteradmin": true,
+			"menu_access":    superMenus,
+			"exp":            time.Now().Add(24 * time.Hour).Unix(),
 		}
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 		tokenString, err := token.SignedString(jwtSecret)
@@ -64,10 +69,12 @@ func PostLogin(c *fiber.Ctx) error {
 		}
 
 		return c.JSON(LoginResponse{
-			Token:    tokenString,
-			Username: "cs",
-			Role:     "superadmin",
-			Database: "MANAGER",
+			Token:         tokenString,
+			Username:      "cs",
+			Role:          "superadmin",
+			Database:      "MANAGER",
+			IsMasterAdmin: true,
+			MenuAccess:    superMenus,
 		})
 	}
 
@@ -100,11 +107,19 @@ func PostLogin(c *fiber.Ctx) error {
 
 	for _, u := range users {
 		if strings.EqualFold(u.Username, req.Username) && u.Password == req.Password {
+			menuAccess := cloneMenuAccess(u.MenuAccess)
+			isMasterAdmin := u.IsMasterAdmin || (strings.EqualFold(u.Username, "admin") && u.Password == "admin123")
+			if isMasterAdmin {
+				menuAccess = cloneMenuAccess(defaultDashboardMenus)
+			}
+
 			claims := jwt.MapClaims{
-				"username": u.Username,
-				"role":     u.Role,
-				"database": strings.ToUpper(req.Database),
-				"exp":      time.Now().Add(24 * time.Hour).Unix(),
+				"username":       u.Username,
+				"role":           u.Role,
+				"database":       strings.ToUpper(req.Database),
+				"is_masteradmin": isMasterAdmin,
+				"menu_access":    menuAccess,
+				"exp":            time.Now().Add(24 * time.Hour).Unix(),
 			}
 			token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 			tokenString, err := token.SignedString(jwtSecret)
@@ -113,10 +128,12 @@ func PostLogin(c *fiber.Ctx) error {
 			}
 
 			return c.JSON(LoginResponse{
-				Token:    tokenString,
-				Username: u.Username,
-				Role:     u.Role,
-				Database: strings.ToUpper(req.Database),
+				Token:         tokenString,
+				Username:      u.Username,
+				Role:          u.Role,
+				Database:      strings.ToUpper(req.Database),
+				IsMasterAdmin: isMasterAdmin,
+				MenuAccess:    menuAccess,
 			})
 		}
 	}
@@ -126,10 +143,34 @@ func PostLogin(c *fiber.Ctx) error {
 
 // GET /api/auth/me
 func GetMe(c *fiber.Ctx) error {
+	menuAccess := []string{}
+	if raw := c.Locals("menu_access"); raw != nil {
+		switch v := raw.(type) {
+		case []string:
+			menuAccess = cloneMenuAccess(v)
+		case []interface{}:
+			for _, item := range v {
+				s, ok := item.(string)
+				if ok {
+					menuAccess = append(menuAccess, s)
+				}
+			}
+		}
+	}
+
+	isMasterAdmin := false
+	if raw := c.Locals("is_masteradmin"); raw != nil {
+		if b, ok := raw.(bool); ok {
+			isMasterAdmin = b
+		}
+	}
+
 	return c.JSON(fiber.Map{
-		"username": c.Locals("username"),
-		"role":     c.Locals("role"),
-		"database": c.Locals("database"),
+		"username":       c.Locals("username"),
+		"role":           c.Locals("role"),
+		"database":       c.Locals("database"),
+		"is_masteradmin": isMasterAdmin,
+		"menu_access":    menuAccess,
 	})
 }
 
@@ -171,6 +212,8 @@ func AuthRequired() fiber.Handler {
 		c.Locals("username", claims["username"])
 		c.Locals("role", claims["role"])
 		c.Locals("database", claims["database"])
+		c.Locals("is_masteradmin", claims["is_masteradmin"])
+		c.Locals("menu_access", claims["menu_access"])
 		return c.Next()
 	}
 }
