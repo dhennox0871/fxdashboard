@@ -95,6 +95,40 @@ export default function DailyView() {
     fetchData();
   }, [dateRange, customStart, customEnd]);
 
+  const parseJsonSafe = async (res) => {
+    const text = await res.text();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { raw: text };
+    }
+  };
+
+  const loadDailySourceRowsFromRecent = async (startStr, endStr) => {
+    const recentRes = await fetchWithAuth(`/api/daily/recent?startDate=${startStr}&endDate=${endStr}`);
+    const recentData = await parseJsonSafe(recentRes);
+    if (!recentRes.ok) {
+      throw new Error(recentData?.error || recentData?.raw || 'Gagal memuat data sumber harian');
+    }
+
+    const rows = Array.isArray(recentData)
+      ? recentData.map((row) => ({
+          nomor_nota: row?.logtransentrytext || '-',
+          tanggal: row?.entrydate || '-',
+          nilai_rupiah: Number(row?.total || 0),
+        }))
+      : [];
+
+    return {
+      rows,
+      summary: {
+        total_orders: Number(data?.kpi?.total_orders || rows.length),
+        total_revenue: Number(data?.kpi?.total_sales || rows.reduce((acc, row) => acc + Number(row?.nilai_rupiah || 0), 0)),
+      },
+    };
+  };
+
   const loadDailySourceRows = async ({ contextRow, configId }) => {
     const { startStr, endStr } = getDates();
     const params = new URLSearchParams({
@@ -108,19 +142,15 @@ export default function DailyView() {
     }
 
     const res = await fetchWithAuth(`/api/daily/source-transactions?${params.toString()}`);
-    const raw = await res.text();
-    let body = {};
-    try {
-      body = raw ? JSON.parse(raw) : {};
-    } catch {
-      if (!res.ok) {
-        throw new Error('Endpoint sumber data belum tersedia. Pastikan backend terbaru sudah direstart.');
-      }
-      throw new Error('Respons sumber data tidak valid dari server.');
-    }
+    const body = await parseJsonSafe(res);
 
     if (!res.ok) {
-      throw new Error(body?.error || 'Gagal memuat data sumber harian');
+      const raw = String(body?.raw || '').toLowerCase();
+      const endpointUnavailable = res.status === 404 || raw.includes('cannot get') || raw.includes('not found');
+      if (endpointUnavailable) {
+        return loadDailySourceRowsFromRecent(startStr, endStr);
+      }
+      throw new Error(body?.error || body?.raw || 'Gagal memuat data sumber harian');
     }
 
     if ((configId === 'daily_orders' || configId === 'daily_revenue') && contextRow?.tgl) {
