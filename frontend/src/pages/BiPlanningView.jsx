@@ -5,6 +5,10 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Grid,
   MenuItem,
   Paper,
@@ -85,6 +89,11 @@ export default function BiPlanningView() {
   const [performanceData, setPerformanceData] = useState({ top: [], slow: [] });
   const [performanceLoading, setPerformanceLoading] = useState(true);
   const [performanceError, setPerformanceError] = useState('');
+  const [sourceDialogOpen, setSourceDialogOpen] = useState(false);
+  const [sourceDialogTitle, setSourceDialogTitle] = useState('Data Sumber');
+  const [sourceDialogRows, setSourceDialogRows] = useState([]);
+  const [sourceDialogPage, setSourceDialogPage] = useState(0);
+  const [sourceDialogRowsPerPage, setSourceDialogRowsPerPage] = useState(10);
 
   const parseJsonSafe = async (res) => {
     const text = await res.text();
@@ -339,6 +348,161 @@ export default function BiPlanningView() {
     }).format(n);
   };
 
+  const toSourceRows = (input) => {
+    if (Array.isArray(input)) {
+      return input.map((row, index) => {
+        if (row && typeof row === 'object') return row;
+        return { value: row, row_no: index + 1 };
+      });
+    }
+    if (input && typeof input === 'object') return [input];
+    if (input == null) return [];
+    return [{ value: input }];
+  };
+
+  const openSourceDialog = (title, rows) => {
+    setSourceDialogTitle(title || 'Data Sumber');
+    setSourceDialogRows(toSourceRows(rows));
+    setSourceDialogPage(0);
+    setSourceDialogOpen(true);
+  };
+
+  const openSourceFromChartState = (title, state, fallbackRows) => {
+    const payloadRow = state?.activePayload?.[0]?.payload;
+    if (payloadRow && typeof payloadRow === 'object') {
+      openSourceDialog(title, [payloadRow]);
+      return;
+    }
+    openSourceDialog(title, fallbackRows);
+  };
+
+  const sourceColumns = useMemo(() => {
+    if (sourceDialogRows.length === 0) return [];
+    const keys = new Set();
+    sourceDialogRows.forEach((row) => {
+      Object.keys(row || {}).forEach((key) => keys.add(key));
+    });
+    return Array.from(keys);
+  }, [sourceDialogRows]);
+
+  const pagedSourceDialogRows = useMemo(() => {
+    const start = sourceDialogPage * sourceDialogRowsPerPage;
+    return sourceDialogRows.slice(start, start + sourceDialogRowsPerPage);
+  }, [sourceDialogRows, sourceDialogPage, sourceDialogRowsPerPage]);
+
+  const sourceButtonSx = {
+    textTransform: 'none',
+    fontWeight: 700,
+    borderColor: '#d3c6f8',
+    color: '#6d4bc3',
+    backgroundColor: '#f5f0ff',
+    px: 1.25,
+    py: 0.2,
+    minWidth: 'auto',
+    '&:hover': {
+      borderColor: '#bca9ef',
+      backgroundColor: '#ebe2ff',
+    },
+  };
+
+  const sourceColumnLabel = (column) => {
+    const map = {
+      channel: 'Channel',
+      category: 'Kategori',
+      count: 'Jumlah',
+      contribution: 'Kontribusi (%)',
+      createby: 'Kasir',
+      date: 'Tanggal',
+      doi: 'DOI',
+      margin_pct: 'Margin (%)',
+      name: 'Nama',
+      percent: 'Persentase (%)',
+      phase: 'Fase',
+      revenue: 'Revenue',
+      stock_qty: 'Stok',
+      total: 'Total',
+      units: 'Unit',
+      value: 'Nilai',
+      bulan: 'Bulan',
+      label: 'Label',
+    };
+    return map[column] || column;
+  };
+
+  const isCurrencyColumn = (column) => {
+    const key = String(column || '').toLowerCase();
+    return key.includes('revenue') || key === 'total' || key.includes('sales');
+  };
+
+  const isNumericColumn = (column) => {
+    const key = String(column || '').toLowerCase();
+    return (
+      key === 'bulan' ||
+      key.includes('count') ||
+      key.includes('qty') ||
+      key.includes('unit') ||
+      key.includes('stock') ||
+      key.includes('doi') ||
+      key.includes('margin') ||
+      key.includes('percent') ||
+      key.includes('contribution') ||
+      key.includes('total') ||
+      key.includes('revenue') ||
+      key.includes('value')
+    );
+  };
+
+  const isSummableColumn = (column) => {
+    const key = String(column || '').toLowerCase();
+    if (key === 'bulan' || key.includes('percent') || key.includes('margin') || key.includes('doi')) {
+      return false;
+    }
+    return (
+      key.includes('revenue') ||
+      key === 'total' ||
+      key.includes('count') ||
+      key.includes('qty') ||
+      key.includes('unit') ||
+      key.includes('stock') ||
+      key.includes('value')
+    );
+  };
+
+  const sourceTotals = useMemo(() => {
+    const totals = {};
+    sourceColumns.forEach((column) => {
+      if (!isSummableColumn(column)) return;
+      let sum = 0;
+      let hasValue = false;
+      sourceDialogRows.forEach((row) => {
+        const value = Number(row?.[column]);
+        if (Number.isFinite(value)) {
+          sum += value;
+          hasValue = true;
+        }
+      });
+      if (hasValue) {
+        totals[column] = sum;
+      }
+    });
+    return totals;
+  }, [sourceColumns, sourceDialogRows]);
+
+  const hasSourceTotals = Object.keys(sourceTotals).length > 0;
+
+  const renderSourceValue = (column, value) => {
+    if (value == null || value === '') return '-';
+
+    const numeric = Number(value);
+    if (!Number.isNaN(numeric) && Number.isFinite(numeric) && isCurrencyColumn(column)) {
+      return formatCurrency(numeric);
+    }
+    if (!Number.isNaN(numeric) && Number.isFinite(numeric) && isNumericColumn(column)) {
+      return formatNumber(numeric);
+    }
+    return String(value);
+  };
+
   const chartColors = ['#9a55ff', '#07cdae', '#047edf', '#ffbf96', '#fe7096', '#81C784'];
   const uniformKpiCardSx = {
     p: 1.5,
@@ -569,6 +733,9 @@ export default function BiPlanningView() {
                 <Typography variant="body2" color="text.secondary">Line chart revenue per tanggal, filter channel (costcenter).</Typography>
               </Box>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                <Button variant="outlined" onClick={() => openSourceDialog('Data Sumber - Revenue Trend', trendChartRows)} sx={sourceButtonSx}>
+                  Lihat Data Sumber
+                </Button>
                 <TextField
                   select
                   size="small"
@@ -594,7 +761,11 @@ export default function BiPlanningView() {
             ) : (
               <Box sx={{ width: '100%', height: 280 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={trendChartRows} margin={{ top: 12, right: 20, left: 10, bottom: 0 }}>
+                  <AreaChart
+                    data={trendChartRows}
+                    margin={{ top: 12, right: 20, left: 10, bottom: 0 }}
+                    onClick={(state) => openSourceFromChartState('Detail Titik - Revenue Trend', state, trendChartRows)}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                     <YAxis tickFormatter={(v) => new Intl.NumberFormat('id-ID', { notation: 'compact' }).format(v)} tick={{ fontSize: 11 }} />
@@ -613,6 +784,9 @@ export default function BiPlanningView() {
                 <Typography variant="body2" color="text.secondary">Kontribusi revenue per channel berdasarkan costcenter.</Typography>
               </Box>
               <Stack direction="row" spacing={1}>
+                <Button size="small" variant="outlined" onClick={() => openSourceDialog('Data Sumber - Channel Contribution', contributionChartRows)} sx={sourceButtonSx}>
+                  Lihat Data Sumber
+                </Button>
                 <Button size="small" variant={channelChartType === 'bar' ? 'contained' : 'outlined'} onClick={() => setChannelChartType('bar')}>Bar</Button>
                 <Button size="small" variant={channelChartType === 'pie' ? 'contained' : 'outlined'} onClick={() => setChannelChartType('pie')}>Pie</Button>
                 <Button variant="outlined" size="small" startIcon={<Refresh />} onClick={fetchChannelContribution}>Refresh</Button>
@@ -634,6 +808,7 @@ export default function BiPlanningView() {
                         height={280}
                         data={contributionChartRows}
                         margin={{ top: 10, right: 20, left: 10, bottom: 0 }}
+                        onClick={(state) => openSourceFromChartState('Detail Titik - Channel Contribution', state, contributionChartRows)}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="channel" tick={{ fontSize: 11 }} />
@@ -655,6 +830,7 @@ export default function BiPlanningView() {
                           cy="50%"
                           innerRadius={50}
                           outerRadius={95}
+                          onClick={(entry) => openSourceDialog('Detail Titik - Channel Contribution', [entry?.payload || entry])}
                         >
                           {contributionChartRows.map((entry, idx) => (
                             <Cell key={entry.channel} fill={chartColors[idx % chartColors.length]} />
@@ -1099,7 +1275,12 @@ export default function BiPlanningView() {
           </Paper>
 
           <Paper sx={{ p: 2.5, borderRadius: 2.5, mb: 3 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5 }}>B. Category Performance</Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} spacing={1} sx={{ mb: 1.5 }}>
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>B. Category Performance</Typography>
+              <Button variant="outlined" onClick={() => openSourceDialog('Data Sumber - Category Performance', categoryRows)} sx={sourceButtonSx}>
+                Lihat Data Sumber
+              </Button>
+            </Stack>
             {categoryError && <Alert severity="warning" sx={{ mb: 2 }}>{categoryError}</Alert>}
             {categoryLoading ? (
               <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>
@@ -1109,7 +1290,13 @@ export default function BiPlanningView() {
               <Grid container spacing={2}>
                 <Grid item xs={12} md={6}>
                   <Box sx={{ width: '100%', minHeight: 280, overflowX: 'auto' }}>
-                    <BarChart width={560} height={280} data={categoryChartRows} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
+                    <BarChart
+                      width={560}
+                      height={280}
+                      data={categoryChartRows}
+                      margin={{ top: 10, right: 20, left: 10, bottom: 0 }}
+                      onClick={(state) => openSourceFromChartState('Detail Titik - Category Performance', state, categoryChartRows)}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="category" tick={{ fontSize: 11 }} />
                       <YAxis tickFormatter={(v) => new Intl.NumberFormat('id-ID', { notation: 'compact' }).format(v)} tick={{ fontSize: 11 }} />
@@ -1161,7 +1348,12 @@ export default function BiPlanningView() {
           >
             <Box sx={{ minWidth: 0 }}>
               <Paper sx={{ p: 2.5, borderRadius: 2.5, height: '100%', width: '100%' }}>
-                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5 }}>C. Product Lifecycle</Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} spacing={1} sx={{ mb: 1.5 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>C. Product Lifecycle</Typography>
+                  <Button variant="outlined" onClick={() => openSourceDialog('Data Sumber - Product Lifecycle', lifecycleRows)} sx={sourceButtonSx}>
+                    Lihat Data Sumber
+                  </Button>
+                </Stack>
                 {lifecycleError && <Alert severity="warning" sx={{ mb: 2 }}>{lifecycleError}</Alert>}
                 {lifecycleLoading ? (
                   <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>
@@ -1171,7 +1363,16 @@ export default function BiPlanningView() {
                   <Box sx={{ width: '100%', height: 280 }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={lifecycleChartRows} dataKey="count" nameKey="phase" cx="50%" cy="50%" innerRadius={50} outerRadius={95}>
+                        <Pie
+                          data={lifecycleChartRows}
+                          dataKey="count"
+                          nameKey="phase"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={50}
+                          outerRadius={95}
+                          onClick={(entry) => openSourceDialog('Detail Titik - Product Lifecycle', [entry?.payload || entry])}
+                        >
                           {lifecycleChartRows.map((row, idx) => (
                             <Cell key={`lc-${row.phase}`} fill={chartColors[idx % chartColors.length]} />
                           ))}
@@ -1290,6 +1491,82 @@ export default function BiPlanningView() {
 
         </>
       )}
+
+      <Dialog open={sourceDialogOpen} onClose={() => setSourceDialogOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>{sourceDialogTitle}</DialogTitle>
+        <DialogContent dividers>
+          {sourceDialogRows.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">Data sumber tidak tersedia.</Typography>
+          ) : (
+            <>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 700, width: 72 }} align="right">No</TableCell>
+                      {sourceColumns.map((column) => (
+                        <TableCell key={column} sx={{ fontWeight: 700 }} align={isNumericColumn(column) ? 'right' : 'left'}>
+                          {sourceColumnLabel(column)}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {pagedSourceDialogRows.map((row, rowIndex) => (
+                      <TableRow key={`source-row-${rowIndex}`} hover>
+                        <TableCell align="right" sx={{ color: 'text.secondary' }}>
+                          {formatNumber((sourceDialogPage * sourceDialogRowsPerPage) + rowIndex + 1)}
+                        </TableCell>
+                        {sourceColumns.map((column) => (
+                          <TableCell key={`${rowIndex}-${column}`} align={isNumericColumn(column) ? 'right' : 'left'}>
+                            {renderSourceValue(column, row?.[column])}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+
+                    {hasSourceTotals && (
+                      <TableRow sx={{ backgroundColor: '#f8f8fb' }}>
+                        <TableCell align="right" sx={{ fontWeight: 700 }}>Total</TableCell>
+                        {sourceColumns.map((column) => (
+                          <TableCell key={`total-${column}`} align={isNumericColumn(column) ? 'right' : 'left'} sx={{ fontWeight: 700 }}>
+                            {sourceTotals[column] == null
+                              ? '-'
+                              : (isCurrencyColumn(column)
+                                ? formatCurrency(sourceTotals[column])
+                                : formatNumber(sourceTotals[column]))}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              <TablePagination
+                component="div"
+                count={sourceDialogRows.length}
+                page={sourceDialogPage}
+                onPageChange={(_, nextPage) => setSourceDialogPage(nextPage)}
+                rowsPerPage={sourceDialogRowsPerPage}
+                onRowsPerPageChange={(event) => {
+                  setSourceDialogRowsPerPage(parseInt(event.target.value, 10));
+                  setSourceDialogPage(0);
+                }}
+                rowsPerPageOptions={[10, 25, 50, 100]}
+                labelRowsPerPage="Baris per halaman"
+              />
+
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Total data ditampilkan: {formatNumber(sourceDialogRows.length)} baris
+              </Typography>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSourceDialogOpen(false)}>Tutup</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

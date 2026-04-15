@@ -1,10 +1,36 @@
 import React from 'react';
-import { Box, Typography, Paper } from '@mui/material';
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TablePagination,
+  TableRow,
+  Typography,
+} from '@mui/material';
 import { TrendingUp, ShoppingBag, LayoutGrid as Category, Building as Business, User as Person } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
-export default function DashboardCard({ config, data, nameKey, valKey }) {
+export default function DashboardCard({ config, data, nameKey, valKey, sourceProvider }) {
   if (!config.isVisible) return null;
+
+  const [sourceDialogOpen, setSourceDialogOpen] = React.useState(false);
+  const [sourceDialogTitle, setSourceDialogTitle] = React.useState('Data Sumber');
+  const [sourceRows, setSourceRows] = React.useState([]);
+  const [sourceLoading, setSourceLoading] = React.useState(false);
+  const [sourceError, setSourceError] = React.useState('');
+  const [sourceSummary, setSourceSummary] = React.useState({ total_orders: 0, total_revenue: 0, assembly_qty: 0 });
+  const [sourcePage, setSourcePage] = React.useState(0);
+  const [sourceRowsPerPage, setSourceRowsPerPage] = React.useState(10);
 
   const getColors = (theme) => {
     switch (theme) {
@@ -30,6 +56,154 @@ export default function DashboardCard({ config, data, nameKey, valKey }) {
   const cTheme = getColors(config.colorTheme);
 
   const formatCurrency = (val) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
+  const formatNumber = (val) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(val || 0));
+
+  const toRows = (input) => {
+    if (Array.isArray(input)) {
+      return input.map((row, index) => {
+        if (row && typeof row === 'object') return row;
+        return { value: row, row_no: index + 1 };
+      });
+    }
+    if (input && typeof input === 'object') return [input];
+    if (input == null) return [];
+    return [{ value: input }];
+  };
+
+  const openSourceDialog = (title, rows) => {
+    const normalizedRows = toRows(rows);
+    const computedRevenue = normalizedRows.reduce((acc, row) => {
+      const baseValue = row?.nilai_rupiah ?? row?.total ?? row?.value;
+      const numeric = Number(baseValue);
+      if (Number.isFinite(numeric)) return acc + numeric;
+
+      const tunai = Number(row?.tunai ?? 0);
+      const kredit = Number(row?.kredit ?? 0);
+      if (Number.isFinite(tunai) || Number.isFinite(kredit)) {
+        return acc + (Number.isFinite(tunai) ? tunai : 0) + (Number.isFinite(kredit) ? kredit : 0);
+      }
+
+      return acc;
+    }, 0);
+
+    setSourceDialogTitle(title || 'Data Sumber');
+    setSourceRows(normalizedRows);
+    setSourceError('');
+    setSourceSummary({ total_orders: normalizedRows.length, total_revenue: computedRevenue });
+    setSourcePage(0);
+    setSourceDialogOpen(true);
+  };
+
+  const openSourceDialogAsync = async (title, contextRow = null) => {
+    if (typeof sourceProvider !== 'function') {
+      openSourceDialog(title, contextRow ? [contextRow] : []);
+      return;
+    }
+
+    setSourceDialogTitle(title || 'Data Sumber');
+    setSourceDialogOpen(true);
+    setSourceLoading(true);
+    setSourceError('');
+    setSourcePage(0);
+
+    try {
+      const result = await sourceProvider({ contextRow, configId: config.id });
+      const rows = toRows(result?.rows || []);
+      const summary = result?.summary || {};
+
+      const fallbackRevenue = rows.reduce((acc, row) => {
+        const value = Number(row?.nilai_rupiah ?? row?.total ?? row?.value ?? 0);
+        return acc + (Number.isFinite(value) ? value : 0);
+      }, 0);
+
+      setSourceRows(rows);
+      setSourceSummary({
+        total_orders: Number(summary.total_orders ?? rows.length),
+        total_revenue: Number(summary.total_revenue ?? fallbackRevenue),
+        assembly_qty: Number(summary.assembly_qty ?? 0),
+      });
+    } catch (err) {
+      setSourceRows([]);
+      setSourceSummary({ total_orders: 0, total_revenue: 0, assembly_qty: 0 });
+      setSourceError(err?.message || 'Gagal memuat data sumber.');
+    } finally {
+      setSourceLoading(false);
+    }
+  };
+
+  const pagedSourceRows = React.useMemo(() => {
+    const start = sourcePage * sourceRowsPerPage;
+    return sourceRows.slice(start, start + sourceRowsPerPage);
+  }, [sourceRows, sourcePage, sourceRowsPerPage]);
+
+  const isNumericColumn = React.useCallback((column) => (
+    column === 'nilai_rupiah' ||
+    column === 'total' ||
+    column === 'tunai' ||
+    column === 'kredit' ||
+    column === 'total_orders' ||
+    column.includes('amount') ||
+    column.includes('total')
+  ), []);
+
+  const sourceColumns = React.useMemo(() => {
+    if (sourceRows.length === 0) return [];
+    const keys = new Set();
+    sourceRows.forEach((row) => {
+      Object.keys(row || {}).forEach((key) => keys.add(key));
+    });
+    return Array.from(keys);
+  }, [sourceRows]);
+
+  const hasNomorNotaColumn = React.useMemo(
+    () => sourceColumns.includes('nomor_nota') || sourceColumns.includes('logtransentrytext'),
+    [sourceColumns],
+  );
+
+  const renderSourceButton = (title, rows, contextRow = null) => (
+    <Button
+      size="small"
+      variant="outlined"
+      onClick={() => {
+        if (typeof sourceProvider === 'function') {
+          openSourceDialogAsync(title, contextRow);
+          return;
+        }
+        openSourceDialog(title, rows);
+      }}
+      sx={{
+        textTransform: 'none',
+        fontWeight: 700,
+        borderColor: '#d3c6f8',
+        color: '#6d4bc3',
+        backgroundColor: '#f5f0ff',
+        px: 1.25,
+        py: 0.2,
+        minWidth: 'auto',
+        '&:hover': {
+          borderColor: '#bca9ef',
+          backgroundColor: '#ebe2ff',
+        },
+      }}
+    >
+      Lihat Data Sumber
+    </Button>
+  );
+
+  const openSourceFromChartState = (title, state, fallbackRows) => {
+    const payloadRow = state?.activePayload?.[0]?.payload;
+    if (typeof sourceProvider === 'function') {
+      openSourceDialogAsync(title, payloadRow || null);
+      return;
+    }
+    if (payloadRow && typeof payloadRow === 'object') {
+      openSourceDialog(title, [payloadRow]);
+      return;
+    }
+    if (fallbackRows) {
+      openSourceDialog(title, fallbackRows);
+    }
+  };
 
   const renderKPI = () => (
     <Paper sx={{
@@ -42,8 +216,11 @@ export default function DashboardCard({ config, data, nameKey, valKey }) {
       </Box>
       <Typography variant="subtitle2" sx={{ opacity: 0.9, fontWeight: 600, fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>{config.title}</Typography>
       <Typography variant="h4" sx={{ fontWeight: 'bold', my: { xs: 1, sm: 1.5 }, fontSize: { xs: '1.5rem', sm: '2.125rem' } }}>{config.id.includes('order') ? data?.total_orders || 0 : formatCurrency(data?.total_sales || 0)}</Typography>
-      <Box sx={{ backgroundColor: 'rgba(255,255,255,0.2)', py: 0.5, px: 2, borderRadius: 10, display: 'inline-block', mt: 1 }}>
-        <Typography variant="caption" sx={{ fontWeight: 600 }}>Periode Terpilih</Typography>
+      <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+        <Typography variant="caption" sx={{ fontWeight: 600, opacity: 0.9 }}>
+          Periode terpilih
+        </Typography>
+        {typeof sourceProvider === 'function' && renderSourceButton(`Data Sumber - ${config.title}`, [], null)}
       </Box>
     </Paper>
   );
@@ -71,16 +248,35 @@ export default function DashboardCard({ config, data, nameKey, valKey }) {
   };
 
   const renderPieChart = () => {
-    const pieData = Array.isArray(data) ? data.slice(0, 5) : [];
+    const fullData = Array.isArray(data) ? data : [];
+    const pieData = fullData.slice(0, 5);
     const COLORS = ['#fe7096', '#9a55ff', '#047edf', '#07cdae', '#FFC107'];
     
     return (
       <Paper sx={{ p: 3.5, borderRadius: '10px', mb: 3, boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>{config.title}</Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{config.title}</Typography>
+          {renderSourceButton(`Data Sumber - ${config.title}`, fullData)}
+        </Box>
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'center', minHeight: { xs: 350, md: 200 } }}>
           <ResponsiveContainer width={ { xs: '100%', md: '50%' } } height={ { xs: 200, md: '100%' } }>
             <PieChart>
-              <Pie data={pieData} dataKey={valKey} nameKey={nameKey} innerRadius={45} outerRadius={80} stroke="none">
+              <Pie
+                data={pieData}
+                dataKey={valKey}
+                nameKey={nameKey}
+                innerRadius={45}
+                outerRadius={80}
+                stroke="none"
+                onClick={(entry) => {
+                  const row = entry?.payload || entry;
+                  if (typeof sourceProvider === 'function') {
+                    openSourceDialogAsync(`Detail Titik - ${config.title}`, row);
+                    return;
+                  }
+                  openSourceDialog(`Detail Titik - ${config.title}`, [row]);
+                }}
+              >
                 {pieData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
               </Pie>
             </PieChart>
@@ -105,10 +301,13 @@ export default function DashboardCard({ config, data, nameKey, valKey }) {
     const barData = Array.isArray(data) ? data : [];
     return (
       <Paper sx={{ p: 3.5, borderRadius: '10px', mb: 3, boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 3 }}>{config.title}</Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{config.title}</Typography>
+          {renderSourceButton(`Data Sumber - ${config.title}`, barData)}
+        </Box>
         <Box sx={{ height: 220, mt: 2 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={barData}>
+            <BarChart data={barData} onClick={(state) => openSourceFromChartState(`Detail Titik - ${config.title}`, state, barData)}>
               <XAxis dataKey={nameKey} axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#aaa'}} interval={0} />
               <Tooltip cursor={{fill: 'rgba(0,0,0,0.02)'}} formatter={(value) => formatCurrency(value)} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 14px rgba(0,0,0,0.1)'}} />
               <Bar dataKey={valKey} fill={`url(#colorBar${config.id})`} radius={[6, 6, 0, 0]} barSize={25} />
@@ -138,6 +337,7 @@ export default function DashboardCard({ config, data, nameKey, valKey }) {
       <Paper sx={{ p: 3.5, borderRadius: '10px', mb: 3, boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{config.title}</Typography>
+          {renderSourceButton(`Data Sumber - ${config.title}`, chartData)}
           {chartData.length > 0 && chartData[0].kredit !== undefined && (
             <Box sx={{ display: 'flex', gap: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -153,7 +353,11 @@ export default function DashboardCard({ config, data, nameKey, valKey }) {
         </Box>
         <Box sx={{ height: 260, mt: 2 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+            <AreaChart
+              data={chartData}
+              margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
+              onClick={(state) => openSourceFromChartState(`Detail Titik - ${config.title}`, state, chartData)}
+            >
               <defs>
                 <linearGradient id="colorTunai" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#07cdae" stopOpacity={0.4}/>
@@ -215,13 +419,135 @@ export default function DashboardCard({ config, data, nameKey, valKey }) {
   // Adjust display fallback for AreaChart since the user selected line_chart previously
   const displayType = config.displayType === 'line_chart' ? 'area_chart' : config.displayType;
 
+  let content = null;
   switch (displayType) {
-    case 'kpi': return renderKPI();
-    case 'top_list': return renderTopList();
-    case 'pie_chart': return renderPieChart();
-    case 'bar_chart': return renderBarChart();
-    case 'area_chart': return renderAreaChart();
-    case 'list': return renderRecentList();
-    default: return null;
+    case 'kpi':
+      content = renderKPI();
+      break;
+    case 'top_list':
+      content = renderTopList();
+      break;
+    case 'pie_chart':
+      content = renderPieChart();
+      break;
+    case 'bar_chart':
+      content = renderBarChart();
+      break;
+    case 'area_chart':
+      content = renderAreaChart();
+      break;
+    case 'list':
+      content = renderRecentList();
+      break;
+    default:
+      content = null;
+      break;
   }
+
+  return (
+    <>
+      {content}
+
+      <Dialog open={sourceDialogOpen} onClose={() => setSourceDialogOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>{sourceDialogTitle}</DialogTitle>
+        <DialogContent dividers>
+          {sourceLoading ? (
+            <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
+              <CircularProgress size={26} />
+            </Box>
+          ) : sourceError ? (
+            <Typography variant="body2" color="error">{sourceError}</Typography>
+          ) : sourceRows.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">Data sumber tidak tersedia.</Typography>
+          ) : (
+            <>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 700, width: 72 }} align="right">No</TableCell>
+                      {sourceColumns.map((column) => (
+                        <TableCell key={column} sx={{ fontWeight: 700 }} align={isNumericColumn(column) ? 'right' : 'left'}>
+                          {column === 'nomor_nota' ? 'Nomor Nota' :
+                            column === 'tanggal' ? 'Tanggal' :
+                            column === 'nilai_rupiah' ? 'Nilai (Rp)' :
+                            column}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {pagedSourceRows.map((row, rowIndex) => (
+                      <TableRow key={`source-row-${rowIndex}`} hover>
+                        <TableCell align="right" sx={{ color: 'text.secondary' }}>
+                          {formatNumber((sourcePage * sourceRowsPerPage) + rowIndex + 1)}
+                        </TableCell>
+                        {sourceColumns.map((column) => {
+                          const value = row?.[column];
+                          const isCurrency = column === 'nilai_rupiah' || column === 'total' || column === 'tunai' || column === 'kredit';
+                          const isNumeric = typeof value === 'number' || (!Number.isNaN(Number(value)) && value !== null && value !== '');
+
+                          return (
+                            <TableCell key={`${rowIndex}-${column}`} align={isCurrency || isNumericColumn(column) ? 'right' : 'left'}>
+                              {isCurrency
+                                ? formatCurrency(value)
+                                : isNumeric
+                                  ? formatNumber(value)
+                                  : String(value ?? '-')}
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              <TablePagination
+                component="div"
+                count={sourceRows.length}
+                page={sourcePage}
+                onPageChange={(_, nextPage) => setSourcePage(nextPage)}
+                rowsPerPage={sourceRowsPerPage}
+                onRowsPerPageChange={(event) => {
+                  setSourceRowsPerPage(parseInt(event.target.value, 10));
+                  setSourcePage(0);
+                }}
+                rowsPerPageOptions={[10, 25, 50, 100]}
+                labelRowsPerPage="Baris per halaman"
+              />
+
+              <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1.5 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Total data ditampilkan: {formatNumber(sourceRows.length)} baris
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 2.5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                    {hasNomorNotaColumn ? 'Total Nota' : 'Total Item'}: {formatNumber(sourceRows.length)}
+                  </Typography>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                    Total Revenue: {formatCurrency(sourceSummary.total_revenue)}
+                  </Typography>
+                  {Number(sourceSummary.assembly_qty || 0) > 0 && (
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                      Qty Komponen (47): {formatNumber(sourceSummary.assembly_qty)}
+                    </Typography>
+                  )}
+                </Box>
+              </Box>
+
+              {sourceSummary.total_orders !== sourceRows.length && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block', textAlign: 'right' }}>
+                  Total Order KPI: {formatNumber(sourceSummary.total_orders)} (sesuai perhitungan kartu KPI)
+                </Typography>
+              )}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSourceDialogOpen(false)}>Tutup</Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
 }

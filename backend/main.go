@@ -45,6 +45,7 @@ func main() {
 	api.Get("/daily/chart", GetDailyChart)
 	api.Get("/daily/cashier", GetDailyCashier)
 	api.Get("/daily/recent", GetDailyRecent)
+	api.Get("/daily/source-transactions", GetDailySourceTransactions)
 
 	api.Get("/annually/kpi", GetAnnuallyKPI)
 	api.Get("/annually/chart", GetAnnuallyChart)

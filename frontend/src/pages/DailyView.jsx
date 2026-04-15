@@ -95,13 +95,60 @@ export default function DailyView() {
     fetchData();
   }, [dateRange, customStart, customEnd]);
 
+  const loadDailySourceRows = async ({ contextRow, configId }) => {
+    const { startStr, endStr } = getDates();
+    const params = new URLSearchParams({
+      startDate: startStr,
+      endDate: endStr,
+      limit: '10000',
+    });
+
+    if (contextRow?.tgl) {
+      params.set('date', contextRow.tgl);
+    }
+
+    const res = await fetchWithAuth(`/api/daily/source-transactions?${params.toString()}`);
+    const raw = await res.text();
+    let body = {};
+    try {
+      body = raw ? JSON.parse(raw) : {};
+    } catch {
+      if (!res.ok) {
+        throw new Error('Endpoint sumber data belum tersedia. Pastikan backend terbaru sudah direstart.');
+      }
+      throw new Error('Respons sumber data tidak valid dari server.');
+    }
+
+    if (!res.ok) {
+      throw new Error(body?.error || 'Gagal memuat data sumber harian');
+    }
+
+    if ((configId === 'daily_orders' || configId === 'daily_revenue') && contextRow?.tgl) {
+      const dayRows = Array.isArray(body?.rows)
+        ? body.rows.filter((row) => String(row?.tanggal || '').startsWith(contextRow.tgl))
+        : [];
+      return {
+        rows: dayRows,
+        summary: {
+          total_orders: dayRows.length,
+          total_revenue: dayRows.reduce((acc, row) => acc + Number(row?.nilai_rupiah || 0), 0),
+        },
+      };
+    }
+
+    return {
+      rows: Array.isArray(body?.rows) ? body.rows : [],
+      summary: body?.summary || { total_orders: 0, total_revenue: 0 },
+    };
+  };
+
   const renderConfigCard = (config) => {
     switch (config.id) {
       case 'daily_revenue':
-      case 'daily_orders': return <DashboardCard config={config} data={data.kpi} nameKey="-" valKey="-" />;
+      case 'daily_orders': return <DashboardCard config={config} data={data.kpi} nameKey="-" valKey="-" sourceProvider={loadDailySourceRows} />;
       case 'daily_group': return <DashboardCard config={config} data={data.group} nameKey="description" valKey="total" />;
       case 'daily_costcenter': return <DashboardCard config={config} data={data.costcenter} nameKey="description" valKey="total" />;
-      case 'daily_chart': return <DashboardCard config={config} data={data.chart} nameKey="tgl" valKey="-" />;
+      case 'daily_chart': return <DashboardCard config={config} data={data.chart} nameKey="tgl" valKey="-" sourceProvider={loadDailySourceRows} />;
       case 'daily_cashier': return <DashboardCard config={config} data={data.cashier} nameKey="createby" valKey="total" />;
       case 'daily_recent': return <DashboardCard config={config} data={data.recent} nameKey="-" valKey="-" />;
       default: return null;
