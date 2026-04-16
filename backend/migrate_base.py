@@ -17,7 +17,7 @@ DRIVERS = [
     "SQL Server",
 ]
 
-TRANSTYPE_IDS = (10, 11, 18, 19, 47)
+TRANSTYPE_IDS = (10, 11, 18, 19, 45, 47)
 CHUNK_DAYS = 30
 
 def convert_row(row):
@@ -83,6 +83,9 @@ class UniversalMigrator:
                 print(f"      Warning: Could not discover columns for {table}: {e}")
                 self.source_columns[table] = []
 
+    def transtype_sql_list(self):
+        return ",".join(str(x) for x in TRANSTYPE_IDS)
+
     def setup_schema(self):
         cur = self.lc
         # Force a clean sync by dropping old tables if they exist
@@ -105,6 +108,7 @@ class UniversalMigrator:
             entrydate TEXT,
             transtypeid INTEGER,
             logtransentrytext TEXT,
+            freedescription1 TEXT,
             costcenterid INTEGER,
             representativeid INTEGER,
             createby TEXT,
@@ -219,7 +223,7 @@ class UniversalMigrator:
         print(f"      Syncing logtrans (Full: {self.is_full_sync})...")
         try:
             # Determine range
-            range_sql = f"SELECT MIN(entrydate), MAX(entrydate), COUNT(*) FROM [dbo].[logtrans] WHERE transtypeid IN (10,11,18,19,47)"
+            range_sql = f"SELECT MIN(entrydate), MAX(entrydate), COUNT(*) FROM [dbo].[logtrans] WHERE transtypeid IN ({self.transtype_sql_list()})"
             self.mc.execute(range_sql)
             res = self.mc.fetchone()
             if not res or res[0] is None:
@@ -246,6 +250,7 @@ class UniversalMigrator:
             cols = self.source_columns["logtrans"]
             p_select = [
                 "logtransid", "logtransentryno", "entrydate", "transtypeid", "logtransentrytext",
+                "freedescription1" if "freedescription1" in cols else "NULL",
                 "costcenterid" if "costcenterid" in cols else "NULL",
                 "representativeid" if "representativeid" in cols else "NULL",
                 "createby" if "createby" in cols else "NULL",
@@ -255,7 +260,7 @@ class UniversalMigrator:
             ]
 
             sel_str = ", ".join(p_select)
-            sql = f"SELECT {sel_str} FROM [dbo].[logtrans] WHERE transtypeid IN (10,11,18,19,47) AND entrydate >= ? AND entrydate < ?"
+            sql = f"SELECT {sel_str} FROM [dbo].[logtrans] WHERE transtypeid IN ({self.transtype_sql_list()}) AND entrydate >= ? AND entrydate < ?"
 
             total_migrated = 0
             while current_start <= target_max:
@@ -270,8 +275,8 @@ class UniversalMigrator:
                 if converted:
                     self.lc.executemany("""INSERT OR REPLACE INTO logtrans 
                         (logtransid, logtransentryno, entrydate, transtypeid, logtransentrytext, 
-                         costcenterid, representativeid, createby, clientname, referenceno, totalvalue)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?)""", converted)
+                         freedescription1, costcenterid, representativeid, createby, clientname, referenceno, totalvalue)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", converted)
                     self.lite.commit()
                     total_migrated += len(rows)
                 
@@ -285,7 +290,7 @@ class UniversalMigrator:
     def migrate_chunked_logtransline(self):
         print(f"      Syncing logtransline for {self.target_db_name} (Full: {self.is_full_sync})...")
         try:
-            self.mc.execute(f"SELECT MIN(entrydate), MAX(entrydate) FROM [dbo].[logtrans] WHERE transtypeid IN (10,11,18,19,47)")
+            self.mc.execute(f"SELECT MIN(entrydate), MAX(entrydate) FROM [dbo].[logtrans] WHERE transtypeid IN ({self.transtype_sql_list()})")
             res = self.mc.fetchone()
             if not res or res[0] is None: return
             s_min, s_max = res[0], res[1]
@@ -320,7 +325,7 @@ class UniversalMigrator:
             sel_str = ", ".join(p_select)
             sql = f"""SELECT {sel_str} FROM [dbo].[logtransline] ltl
                      INNER JOIN [dbo].[logtrans] lt ON ltl.logtransid = lt.logtransid
-                     WHERE lt.transtypeid IN (10,11,18,19,47)
+                     WHERE lt.transtypeid IN ({self.transtype_sql_list()})
                      AND lt.entrydate >= ? AND lt.entrydate < ?"""
 
             total_migrated = 0
