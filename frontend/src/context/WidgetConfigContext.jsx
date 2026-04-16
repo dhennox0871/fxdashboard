@@ -9,6 +9,7 @@ const defaultDailyConfigs = [
   { id: 'daily_chart', title: 'Revenue Analysis', orderIndex: 4, displayType: 'line_chart', availableTypes: ['line_chart', 'bar_chart'], colorTheme: 'green', isVisible: true },
   { id: 'daily_cashier', title: 'Sales By Cashier', orderIndex: 5, displayType: 'pie_chart', availableTypes: ['pie_chart', 'bar_chart', 'top_list'], colorTheme: 'orange', isVisible: true },
   { id: 'daily_recent', title: 'Recent Transactions', orderIndex: 6, displayType: 'list', availableTypes: ['list'], colorTheme: 'blue', isVisible: true },
+  { id: 'daily_production', title: 'Production SKSMRT (TT45)', orderIndex: 7, displayType: 'table', availableTypes: ['table'], colorTheme: 'green', isVisible: true },
 ];
 
 const defaultAnnuallyConfigs = [
@@ -22,15 +23,39 @@ const WidgetConfigContext = createContext();
 
 export const useWidgetConfig = () => useContext(WidgetConfigContext);
 
+const mergeConfigs = (defaults, saved) => {
+  if (!Array.isArray(saved) || saved.length === 0) return defaults;
+
+  const savedById = new Map(saved.filter((item) => item?.id).map((item) => [item.id, item]));
+  const merged = defaults.map((def) => {
+    const existing = savedById.get(def.id);
+    if (!existing) return def;
+    if (def.id === 'daily_production') {
+      return {
+        ...existing,
+        ...def,
+        isVisible: typeof existing.isVisible === 'boolean' ? existing.isVisible : def.isVisible,
+        orderIndex: Number.isFinite(existing.orderIndex) ? existing.orderIndex : def.orderIndex,
+      };
+    }
+    return { ...def, ...existing };
+  });
+
+  const extraSaved = saved.filter((item) => item?.id && !defaults.some((def) => def.id === item.id));
+  return [...merged, ...extraSaved];
+};
+
 export const WidgetConfigProvider = ({ children }) => {
   const [dailyConfigs, setDailyConfigs] = useState(() => {
     const saved = localStorage.getItem('daily_widgets_config');
-    return saved ? JSON.parse(saved) : defaultDailyConfigs;
+    if (!saved) return defaultDailyConfigs;
+    return mergeConfigs(defaultDailyConfigs, JSON.parse(saved));
   });
 
   const [annuallyConfigs, setAnnuallyConfigs] = useState(() => {
     const saved = localStorage.getItem('annually_widgets_config');
-    return saved ? JSON.parse(saved) : defaultAnnuallyConfigs;
+    if (!saved) return defaultAnnuallyConfigs;
+    return mergeConfigs(defaultAnnuallyConfigs, JSON.parse(saved));
   });
 
   useEffect(() => {

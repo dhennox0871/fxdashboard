@@ -8,9 +8,10 @@ import { useAuth } from '../context/AuthContext';
 
 export default function DailyView() {
   const { dailyConfigs } = useWidgetConfig();
-  const { fetchWithAuth } = useAuth();
+  const { fetchWithAuth, user } = useAuth();
+  const isSKSMRT = String(user?.database || '').toUpperCase() === 'SKSMRT';
   const [data, setData] = useState({
-    kpi: null, group: [], costcenter: [], chart: [], cashier: [], recent: [],
+    kpi: null, group: [], costcenter: [], chart: [], cashier: [], recent: [], production: { dates: [], rows: [] },
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -71,18 +72,24 @@ export default function DailyView() {
       const dateParams = `?startDate=${startStr}&endDate=${endStr}`;
 
       try {
-        const [kpiRes, groupRes, ccRes, chartRes, cashierRes, recentRes, syncRes] = await Promise.all([
+        const [kpiRes, groupRes, ccRes, chartRes, cashierRes, recentRes, productionRes, syncRes] = await Promise.all([
           fetchWithAuth(`${baseUrl}/kpi${dateParams}`).then(r => r.json()),
           fetchWithAuth(`${baseUrl}/group${dateParams}`).then(r => r.json()),
           fetchWithAuth(`${baseUrl}/costcenter${dateParams}`).then(r => r.json()),
           fetchWithAuth(`${baseUrl}/chart${dateParams}`).then(r => r.json()),
           fetchWithAuth(`${baseUrl}/cashier${dateParams}`).then(r => r.json()),
           fetchWithAuth(`${baseUrl}/recent${dateParams}`).then(r => r.json()),
+          isSKSMRT ? fetchWithAuth(`${baseUrl}/production-comparison`).then(r => r.json()) : Promise.resolve({ dates: [], rows: [] }),
           fetchWithAuth(`/api/settings/last-sync`).then(r => r.json())
         ]);
+
+        const productionTable = {
+          dates: Array.isArray(productionRes?.dates) ? productionRes.dates : [],
+          rows: Array.isArray(productionRes?.rows) ? productionRes.rows : [],
+        };
         
         setData({
-          kpi: kpiRes, group: groupRes, costcenter: ccRes, chart: chartRes, cashier: cashierRes, recent: recentRes
+          kpi: kpiRes, group: groupRes, costcenter: ccRes, chart: chartRes, cashier: cashierRes, recent: recentRes, production: productionTable
         });
         if (syncRes && syncRes.last_sync) setLastSync(syncRes.last_sync);
       } catch (err) {
@@ -166,6 +173,24 @@ export default function DailyView() {
       };
     }
 
+    if (configId === 'daily_production') {
+      const productionRes = await fetchWithAuth(`/api/daily/production?${params.toString()}`);
+      const productionBody = await parseJsonSafe(productionRes);
+      if (!productionRes.ok) {
+        throw new Error(productionBody?.error || productionBody?.raw || 'Gagal memuat data produksi SKSMRT');
+      }
+      const rows = Array.isArray(productionBody?.rows) ? productionBody.rows : [];
+      const summary = productionBody?.summary || {};
+      return {
+        rows,
+        summary: {
+          total_orders: Number(summary.total_rows ?? rows.length),
+          total_revenue: 0,
+          production_qty: Number(summary.total_qty ?? rows.reduce((acc, row) => acc + Number(row?.total_qty || 0), 0)),
+        },
+      };
+    }
+
     return {
       rows: Array.isArray(body?.rows) ? body.rows : [],
       summary: body?.summary || { total_orders: 0, total_revenue: 0 },
@@ -181,11 +206,15 @@ export default function DailyView() {
       case 'daily_chart': return <DashboardCard config={config} data={data.chart} nameKey="tgl" valKey="-" sourceProvider={loadDailySourceRows} />;
       case 'daily_cashier': return <DashboardCard config={config} data={data.cashier} nameKey="createby" valKey="total" />;
       case 'daily_recent': return <DashboardCard config={config} data={data.recent} nameKey="-" valKey="-" />;
+      case 'daily_production': return <DashboardCard config={config} data={data.production} nameKey="description" valKey="total_qty" />;
       default: return null;
     }
   };
 
-  const visibleConfigs = dailyConfigs.filter(c => c.isVisible).sort((a, b) => a.orderIndex - b.orderIndex);
+  const visibleConfigs = dailyConfigs
+    .filter(c => c.isVisible)
+    .filter(c => isSKSMRT || c.id !== 'daily_production')
+    .sort((a, b) => a.orderIndex - b.orderIndex);
   const dates = getDates();
 
   const handleApplyCustomDate = () => {

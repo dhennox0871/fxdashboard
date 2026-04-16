@@ -106,6 +106,21 @@ if not available_tables:
     print("\n[ERROR] Tidak ada tabel dashboard yang ditemukan!")
     sys.exit(1)
 
+
+def has_column(table_name, column_name):
+    try:
+        mc.execute(
+            """
+            SELECT 1
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_NAME = ? AND COLUMN_NAME = ?
+            """,
+            (table_name, column_name),
+        )
+        return mc.fetchone() is not None
+    except Exception:
+        return False
+
 # Debugging path
 print(f"DEBUG: __file__ = {__file__}")
 print(f"DEBUG: CWD = {os.getcwd()}")
@@ -163,6 +178,7 @@ CREATE TABLE IF NOT EXISTS logtrans (
     entrydate TEXT,
     transtypeid INTEGER,
     logtransentrytext TEXT,
+    freedescription1 TEXT,
     costcenterid INTEGER,
     representativeid INTEGER,
     createby TEXT,
@@ -174,6 +190,7 @@ CREATE TABLE IF NOT EXISTS logtransline (
     logtranslineid INTEGER PRIMARY KEY,
     logtransid INTEGER,
     itemid INTEGER,
+    qty REAL,
     netvalue REAL,
     pajakvalue REAL
 );
@@ -277,15 +294,20 @@ else:
 # logtrans
 if 'logtrans' in available_tables:
     actual = available_tables['logtrans']
+    free_desc_expr = "COALESCE(freedescription1, '')"
+    if not has_column(actual, "freedescription1"):
+        free_desc_expr = "''"
+
     migrate('logtrans', actual,
         f"""SELECT logtransid, logtransentryno, 
            CONVERT(varchar, entrydate, 120) as entrydate,
-           transtypeid, logtransentrytext, costcenterid, representativeid, createby,
+           transtypeid, logtransentrytext, {free_desc_expr} as freedescription1,
+           costcenterid, representativeid, createby,
            CONVERT(varchar, modifydate, 120) as modifydate
            FROM [{actual}] 
-           WHERE transtypeid IN (10, 11, 18, 19, 47) 
+           WHERE transtypeid IN (10, 11, 18, 19, 45, 47) 
               {logtrans_filter}""",
-        "INSERT OR REPLACE INTO logtrans VALUES (?,?,?,?,?,?,?,?,?)", 9)
+        "INSERT OR REPLACE INTO logtrans VALUES (?,?,?,?,?,?,?,?,?,?)", 10)
 
 # logtransline (hanya transaksi penjualan)
 if 'logtransline' in available_tables and 'logtrans' in available_tables:
@@ -293,12 +315,12 @@ if 'logtransline' in available_tables and 'logtrans' in available_tables:
     actual_lt = available_tables['logtrans']
     migrate('logtransline', actual_ltl,
         f"""SELECT ltl.logtranslineid, ltl.logtransid, ltl.itemid, 
-           ltl.netvalue, ltl.pajakvalue
+              ltl.qty, ltl.netvalue, ltl.pajakvalue
            FROM [{actual_ltl}] ltl
            INNER JOIN [{actual_lt}] lt ON ltl.logtransid = lt.logtransid
-           WHERE lt.transtypeid IN (10, 11, 18, 19, 47)
+              WHERE lt.transtypeid IN (10, 11, 18, 19, 45, 47)
               {logtransline_filter}""",
-        "INSERT OR REPLACE INTO logtransline VALUES (?,?,?,?,?)", 5)
+          "INSERT OR REPLACE INTO logtransline VALUES (?,?,?,?,?,?)", 6)
 
 # masteritem
 if 'masteritem' in available_tables:

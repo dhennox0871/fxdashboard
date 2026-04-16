@@ -17,11 +17,37 @@ type DailySourceSummary struct {
 	TotalOrders  int     `json:"total_orders"`
 	TotalRevenue float64 `json:"total_revenue"`
 	AssemblyQty  float64 `json:"assembly_qty"`
+	ProductionQty float64 `json:"production_qty"`
 }
 
 type DailySourceResponse struct {
 	Rows    []DailySourceTransactionRow `json:"rows"`
 	Summary DailySourceSummary          `json:"summary"`
+}
+
+type DailyProductionRow struct {
+	EntryDate        string  `json:"entrydate"`
+	FreeDescription1 string  `json:"freedescription1"`
+	CostCenterID     int64   `json:"costcenterid"`
+	CostCenterName   string  `json:"costcenter_name"`
+	ItemGroupCode    string  `json:"itemgroupcode"`
+	ItemGroupName    string  `json:"itemgroup_description"`
+	TotalQty         float64 `json:"total_qty"`
+}
+
+type DailyProductionSummary struct {
+	TotalRows int     `json:"total_rows"`
+	TotalQty  float64 `json:"total_qty"`
+}
+
+type DailyProductionResponse struct {
+	Rows    []DailyProductionRow     `json:"rows"`
+	Summary DailyProductionSummary   `json:"summary"`
+}
+
+type DailyProductionComparisonResponse struct {
+	Dates []string             `json:"dates"`
+	Rows  []DailyProductionRow `json:"rows"`
 }
 
 func getDateRange(c *fiber.Ctx) (string, string) {
@@ -31,6 +57,14 @@ func getDateRange(c *fiber.Ctx) (string, string) {
 	startFmt := startDate[:4] + "-" + startDate[4:6] + "-" + startDate[6:8] + " 00:00:00"
 	endFmt := endDate[:4] + "-" + endDate[4:6] + "-" + endDate[6:8] + " 23:59:59"
 	return startFmt, endFmt
+}
+
+func isSKSMRTDatabase(c *fiber.Ctx) bool {
+	dbName, ok := c.Locals("database").(string)
+	if !ok {
+		return false
+	}
+	return dbName == "SKSMRT"
 }
 
 func GetDailyKPI(c *fiber.Ctx) error {
@@ -269,6 +303,202 @@ func GetDailySourceTransactions(c *fiber.Ctx) error {
 		Rows:    result,
 		Summary: summary,
 	})
+}
+
+func GetDailyProduction(c *fiber.Ctx) error {
+	if !isSKSMRTDatabase(c) {
+		return c.JSON(DailyProductionResponse{
+			Rows:    []DailyProductionRow{},
+			Summary: DailyProductionSummary{TotalRows: 0, TotalQty: 0},
+		})
+	}
+
+	db := GetDB(c)
+	if db == nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Database tidak tersedia"})
+	}
+
+	startStr, endStr := getDateRange(c)
+	dateFilter := c.Query("date", "")
+	limitParam := c.Query("limit", "10000")
+
+	limit := 10000
+	if parsed, err := strconv.Atoi(limitParam); err == nil {
+		if parsed > 0 && parsed <= 20000 {
+			limit = parsed
+		}
+	}
+
+	whereClause := `
+		WHERE lt.entrydate BETWEEN ? AND ?
+		AND lt.transtypeid = 45
+		AND lt.costcenterid IS NOT NULL`
+	args := []interface{}{startStr, endStr}
+	if dateFilter != "" {
+		whereClause += " AND DATE(lt.entrydate) = ?"
+		args = append(args, dateFilter)
+	}
+
+	summaryQuery := `
+		SELECT
+			COUNT(*) AS total_rows,
+			COALESCE(SUM(COALESCE(ltl.qty, 0)), 0) AS total_qty
+		FROM logtrans lt
+		JOIN logtransline ltl ON lt.logtransid = ltl.logtransid
+		` + whereClause
+
+	var summary DailyProductionSummary
+	if err := db.QueryRow(summaryQuery, args...).Scan(&summary.TotalRows, &summary.TotalQty); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	freeDescriptionExpr := "COALESCE(lt.freedescription1, '')"
+	groupByFreeDescription := "lt.freedescription1"
+	if !columnExists(db, "logtrans", "freedescription1") {
+		freeDescriptionExpr = "''"
+		groupByFreeDescription = "''"
+	}
+
+	rowsQuery := `
+		SELECT
+			DATE(lt.entrydate) AS entrydate,
+			` + freeDescriptionExpr + ` AS freedescription1,
+			lt.costcenterid,
+			COALESCE(mc.description, '') AS costcenter_name,
+			COALESCE(mig.itemgroupcode, '') AS itemgroupcode,
+			COALESCE(mig.description, '') AS itemgroup_description,
+			COALESCE(SUM(COALESCE(ltl.qty, 0)), 0) AS total_qty
+		FROM logtrans lt
+		JOIN logtransline ltl ON lt.logtransid = ltl.logtransid
+		LEFT JOIN mastercostcenter mc ON lt.costcenterid = mc.costcenterid
+		LEFT JOIN masteritem mi ON ltl.itemid = mi.itemid
+		LEFT JOIN masteritemgroup mig ON mi.itemgroupid = mig.itemgroupid
+		` + whereClause + `
+		GROUP BY DATE(lt.entrydate), ` + groupByFreeDescription + `, lt.costcenterid, mc.description, mig.itemgroupcode, mig.description
+		ORDER BY DATE(lt.entrydate) DESC, total_qty DESC
+		LIMIT ?`
+
+	rowArgs := append(append([]interface{}{}, args...), limit)
+	rows, err := db.Query(rowsQuery, rowArgs...)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	defer rows.Close()
+
+	result := make([]DailyProductionRow, 0)
+	for rows.Next() {
+		var item DailyProductionRow
+		if err := rows.Scan(
+			&item.EntryDate,
+			&item.FreeDescription1,
+			&item.CostCenterID,
+			&item.CostCenterName,
+			&item.ItemGroupCode,
+			&item.ItemGroupName,
+			&item.TotalQty,
+		); err == nil {
+			result = append(result, item)
+		}
+	}
+
+	return c.JSON(DailyProductionResponse{
+		Rows:    result,
+		Summary: summary,
+	})
+}
+
+func GetDailyProductionComparison(c *fiber.Ctx) error {
+	if !isSKSMRTDatabase(c) {
+		return c.JSON(DailyProductionComparisonResponse{Dates: []string{}, Rows: []DailyProductionRow{}})
+	}
+
+	db := GetDB(c)
+	if db == nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Database tidak tersedia"})
+	}
+
+	dates := make([]string, 0, 5)
+	datesRows, err := db.Query(`
+		SELECT DISTINCT DATE(entrydate) AS tgl
+		FROM logtrans
+		WHERE transtypeid = 45
+		  AND costcenterid IS NOT NULL
+		ORDER BY tgl DESC
+		LIMIT 5`)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	defer datesRows.Close()
+
+	for datesRows.Next() {
+		var tgl string
+		if scanErr := datesRows.Scan(&tgl); scanErr == nil && tgl != "" {
+			dates = append(dates, tgl)
+		}
+	}
+
+	if len(dates) == 0 {
+		return c.JSON(DailyProductionComparisonResponse{Dates: []string{}, Rows: []DailyProductionRow{}})
+	}
+
+	freeDescriptionExpr := "COALESCE(lt.freedescription1, '')"
+	groupByFreeDescription := "lt.freedescription1"
+	if !columnExists(db, "logtrans", "freedescription1") {
+		freeDescriptionExpr = "''"
+		groupByFreeDescription = "''"
+	}
+
+	placeholders := "?"
+	args := make([]interface{}, 0, len(dates))
+	args = append(args, dates[0])
+	for i := 1; i < len(dates); i++ {
+		placeholders += ", ?"
+		args = append(args, dates[i])
+	}
+
+	q := `
+		SELECT
+			DATE(lt.entrydate) AS entrydate,
+			` + freeDescriptionExpr + ` AS freedescription1,
+			lt.costcenterid,
+			COALESCE(mc.description, '') AS costcenter_name,
+			COALESCE(mig.itemgroupcode, '') AS itemgroupcode,
+			COALESCE(mig.description, '') AS itemgroup_description,
+			COALESCE(SUM(COALESCE(ltl.qty, 0)), 0) AS total_qty
+		FROM logtrans lt
+		JOIN logtransline ltl ON lt.logtransid = ltl.logtransid
+		LEFT JOIN mastercostcenter mc ON lt.costcenterid = mc.costcenterid
+		LEFT JOIN masteritem mi ON ltl.itemid = mi.itemid
+		LEFT JOIN masteritemgroup mig ON mi.itemgroupid = mig.itemgroupid
+		WHERE lt.transtypeid = 45
+		  AND lt.costcenterid IS NOT NULL
+		  AND DATE(lt.entrydate) IN (` + placeholders + `)
+		GROUP BY DATE(lt.entrydate), ` + groupByFreeDescription + `, lt.costcenterid, mc.description, mig.itemgroupcode, mig.description
+		ORDER BY DATE(lt.entrydate) DESC, costcenter_name, itemgroup_description, freedescription1`
+
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	defer rows.Close()
+
+	result := make([]DailyProductionRow, 0)
+	for rows.Next() {
+		var item DailyProductionRow
+		if scanErr := rows.Scan(
+			&item.EntryDate,
+			&item.FreeDescription1,
+			&item.CostCenterID,
+			&item.CostCenterName,
+			&item.ItemGroupCode,
+			&item.ItemGroupName,
+			&item.TotalQty,
+		); scanErr == nil {
+			result = append(result, item)
+		}
+	}
+
+	return c.JSON(DailyProductionComparisonResponse{Dates: dates, Rows: result})
 }
 
 func GetLastSync(c *fiber.Ctx) error {

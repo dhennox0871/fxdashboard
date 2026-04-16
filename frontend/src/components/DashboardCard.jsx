@@ -28,7 +28,7 @@ export default function DashboardCard({ config, data, nameKey, valKey, sourcePro
   const [sourceRows, setSourceRows] = React.useState([]);
   const [sourceLoading, setSourceLoading] = React.useState(false);
   const [sourceError, setSourceError] = React.useState('');
-  const [sourceSummary, setSourceSummary] = React.useState({ total_orders: 0, total_revenue: 0, assembly_qty: 0 });
+  const [sourceSummary, setSourceSummary] = React.useState({ total_orders: 0, total_revenue: 0, assembly_qty: 0, production_qty: 0 });
   const [sourcePage, setSourcePage] = React.useState(0);
   const [sourceRowsPerPage, setSourceRowsPerPage] = React.useState(10);
 
@@ -57,6 +57,7 @@ export default function DashboardCard({ config, data, nameKey, valKey, sourcePro
 
   const formatCurrency = (val) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
   const formatNumber = (val) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(val || 0));
+  const isQtyField = (field) => String(field || '').toLowerCase().includes('qty');
 
   const toRows = (input) => {
     if (Array.isArray(input)) {
@@ -89,7 +90,7 @@ export default function DashboardCard({ config, data, nameKey, valKey, sourcePro
     setSourceDialogTitle(title || 'Data Sumber');
     setSourceRows(normalizedRows);
     setSourceError('');
-    setSourceSummary({ total_orders: normalizedRows.length, total_revenue: computedRevenue });
+    setSourceSummary({ total_orders: normalizedRows.length, total_revenue: computedRevenue, production_qty: 0 });
     setSourcePage(0);
     setSourceDialogOpen(true);
   };
@@ -121,10 +122,11 @@ export default function DashboardCard({ config, data, nameKey, valKey, sourcePro
         total_orders: Number(summary.total_orders ?? rows.length),
         total_revenue: Number(summary.total_revenue ?? fallbackRevenue),
         assembly_qty: Number(summary.assembly_qty ?? 0),
+        production_qty: Number(summary.production_qty ?? 0),
       });
     } catch (err) {
       setSourceRows([]);
-      setSourceSummary({ total_orders: 0, total_revenue: 0, assembly_qty: 0 });
+      setSourceSummary({ total_orders: 0, total_revenue: 0, assembly_qty: 0, production_qty: 0 });
       setSourceError(err?.message || 'Gagal memuat data sumber.');
     } finally {
       setSourceLoading(false);
@@ -142,7 +144,11 @@ export default function DashboardCard({ config, data, nameKey, valKey, sourcePro
     column === 'tunai' ||
     column === 'kredit' ||
     column === 'total_orders' ||
+    column === 'total_qty' ||
+    column === 'costcenterid' ||
+    column === 'itemid' ||
     column.includes('amount') ||
+    column.includes('qty') ||
     column.includes('total')
   ), []);
 
@@ -159,6 +165,7 @@ export default function DashboardCard({ config, data, nameKey, valKey, sourcePro
     () => sourceColumns.includes('nomor_nota') || sourceColumns.includes('logtransentrytext'),
     [sourceColumns],
   );
+
 
   const renderSourceButton = (title, rows, contextRow = null) => (
     <Button
@@ -239,11 +246,133 @@ export default function DashboardCard({ config, data, nameKey, valKey, sourcePro
         <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 3, zIndex: 1, position: 'relative' }}>{config.title}</Typography>
         {listData.map((item, idx) => (
           <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5, zIndex: 1, position: 'relative' }}>
-            <Typography variant="body2" sx={{ fontWeight: 500, opacity: 0.9 }}>{item[nameKey]}</Typography>
-            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(item[valKey])}</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 500, opacity: 0.9 }}>{item[nameKey]}</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                  {isQtyField(valKey) ? formatNumber(item[valKey]) : formatCurrency(item[valKey])}
+                </Typography>
           </Box>
         ))}
       </Paper>
+    );
+  };
+
+  const renderProductionComparisonTable = () => {
+    const dates = Array.isArray(data?.dates) ? data.dates : [];
+    const rawRows = Array.isArray(data?.rows) ? data.rows : [];
+
+    const normalizeShift = (value) => {
+      const text = String(value || '').trim().toLowerCase();
+      if (text.includes('pagi')) return 'pagi';
+      if (text.includes('sore') || text.includes('siang')) return 'sore';
+      return 'lainnya';
+    };
+
+    const allBranches = Array.from(new Set(rawRows.map((row) => String(row?.costcenter_name || '-'))));
+    const resolveBranch = (keyword) => allBranches.find((name) => name.toLowerCase().includes(keyword)) || null;
+    const branchOrder = [resolveBranch('bima'), resolveBranch('dompu')].filter(Boolean);
+    const fallbackBranches = allBranches.filter((name) => !branchOrder.includes(name));
+    const branchCards = [...branchOrder, ...fallbackBranches].slice(0, 2);
+
+    const buildBranchRows = (branchName) => {
+      const grouped = rawRows
+        .filter((row) => String(row?.costcenter_name || '-') === branchName)
+        .reduce((acc, row) => {
+          const dateKey = String(row?.entrydate || '-');
+          const itemGroup = String(row?.itemgroup_description || row?.itemgroupcode || '-');
+          const shift = normalizeShift(row?.freedescription1);
+          const key = `${dateKey}__${itemGroup}`;
+
+          if (!acc[key]) {
+            acc[key] = {
+              date: dateKey,
+              itemGroup,
+              pagi: 0,
+              sore: 0,
+            };
+          }
+
+          const qty = Number(row?.total_qty || 0);
+          if (shift === 'pagi') acc[key].pagi += qty;
+          else acc[key].sore += qty;
+          return acc;
+        }, {});
+
+      const dateIndex = new Map(dates.map((d, idx) => [d, idx]));
+      return Object.values(grouped).sort((a, b) => {
+        const da = dateIndex.has(a.date) ? dateIndex.get(a.date) : 999;
+        const db = dateIndex.has(b.date) ? dateIndex.get(b.date) : 999;
+        if (da !== db) return da - db;
+        return String(a.itemGroup).localeCompare(String(b.itemGroup));
+      });
+    };
+
+    const renderBranchTable = (branchName) => {
+      const tableRows = buildBranchRows(branchName);
+      const dateCounts = tableRows.reduce((acc, row) => {
+        const key = String(row.date || '-');
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+      const firstRowByDate = new Set();
+
+      return (
+        <Paper key={branchName} sx={{ p: 2.5, borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>{branchName}</Typography>
+          {tableRows.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">Data produksi tidak tersedia.</Typography>
+          ) : (
+            <TableContainer>
+              <Table size="small" sx={{ tableLayout: 'fixed' }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 700, py: 0.5, px: 1, width: '24%', fontSize: '0.75rem' }}>Tanggal</TableCell>
+                    <TableCell sx={{ fontWeight: 700, py: 0.5, px: 1, width: '42%', fontSize: '0.75rem' }}>Group Barang</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700, py: 0.5, px: 1, width: '17%', fontSize: '0.75rem' }}>Pagi</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700, py: 0.5, px: 1, width: '17%', fontSize: '0.75rem' }}>Sore/Siang</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {tableRows.map((row, idx) => {
+                    const dateKey = String(row.date || '-');
+                    const isFirstDateRow = !firstRowByDate.has(dateKey);
+                    if (isFirstDateRow) firstRowByDate.add(dateKey);
+
+                    return (
+                    <TableRow key={`${branchName}-${idx}`} hover>
+                      {isFirstDateRow && (
+                        <TableCell
+                          rowSpan={dateCounts[dateKey] || 1}
+                          sx={{ py: 0.35, px: 1, fontSize: '0.72rem', fontWeight: 600, verticalAlign: 'top', backgroundColor: '#fafafa' }}
+                        >
+                          {row.date}
+                        </TableCell>
+                      )}
+                      <TableCell sx={{ py: 0.35, px: 1, fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.itemGroup}</TableCell>
+                      <TableCell align="right" sx={{ py: 0.35, px: 1, fontSize: '0.72rem' }}>{formatNumber(row.pagi)}</TableCell>
+                      <TableCell align="right" sx={{ py: 0.35, px: 1, fontSize: '0.72rem' }}>{formatNumber(row.sore)}</TableCell>
+                    </TableRow>
+                  )})}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Paper>
+      );
+    };
+
+    return (
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.25 }}>{config.title}</Typography>
+        {dates.length === 0 || rawRows.length === 0 ? (
+          <Paper sx={{ p: 2.5, borderRadius: '10px' }}>
+            <Typography variant="body2" color="text.secondary">Data produksi 5 tanggal terakhir belum tersedia.</Typography>
+          </Paper>
+        ) : (
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.25 }}>
+            {branchCards.map((branch) => renderBranchTable(branch))}
+          </Box>
+        )}
+      </Box>
     );
   };
 
@@ -439,6 +568,9 @@ export default function DashboardCard({ config, data, nameKey, valKey, sourcePro
     case 'list':
       content = renderRecentList();
       break;
+    case 'table':
+      content = config.id === 'daily_production' ? renderProductionComparisonTable() : null;
+      break;
     default:
       content = null;
       break;
@@ -471,6 +603,13 @@ export default function DashboardCard({ config, data, nameKey, valKey, sourcePro
                           {column === 'nomor_nota' ? 'Nomor Nota' :
                             column === 'tanggal' ? 'Tanggal' :
                             column === 'nilai_rupiah' ? 'Nilai (Rp)' :
+                            column === 'entrydate' ? 'Tgl Entry' :
+                            column === 'freedescription1' ? 'Keterangan Produksi' :
+                            column === 'costcenterid' ? 'Cost Center ID' :
+                            column === 'costcenter_name' ? 'Cost Center' :
+                            column === 'itemgroupcode' ? 'Kode Grup Item' :
+                            column === 'itemgroup_description' ? 'Nama Grup Item' :
+                            column === 'total_qty' ? 'Total Qty' :
                             column}
                         </TableCell>
                       ))}
@@ -531,6 +670,11 @@ export default function DashboardCard({ config, data, nameKey, valKey, sourcePro
                   {Number(sourceSummary.assembly_qty || 0) > 0 && (
                     <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                       Qty Komponen (47): {formatNumber(sourceSummary.assembly_qty)}
+                    </Typography>
+                  )}
+                  {Number(sourceSummary.production_qty || 0) > 0 && (
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                      Qty Produksi (45): {formatNumber(sourceSummary.production_qty)}
                     </Typography>
                   )}
                 </Box>
