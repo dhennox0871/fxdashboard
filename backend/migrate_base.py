@@ -86,6 +86,12 @@ class UniversalMigrator:
     def transtype_sql_list(self):
         return ",".join(str(x) for x in TRANSTYPE_IDS)
 
+    def incremental_start_date(self):
+        # SKSMRT production (transtype 45) can be needed beyond 180 days.
+        if str(self.target_db_name).lower() == "sksmrt":
+            return datetime(2024, 1, 1)
+        return datetime.now() - timedelta(days=180)
+
     def setup_schema(self):
         cur = self.lc
         # Force a clean sync by dropping old tables if they exist
@@ -238,7 +244,7 @@ class UniversalMigrator:
                 current_start = datetime.strptime(current_start[:19], '%Y-%m-%d %H:%M:%S')
             
             if not self.is_full_sync:
-                limit_date = datetime.now() - timedelta(days=180)
+                limit_date = self.incremental_start_date()
                 if current_start < limit_date:
                     current_start = limit_date
 
@@ -300,7 +306,7 @@ class UniversalMigrator:
                 current_start = datetime.strptime(current_start[:19], '%Y-%m-%d %H:%M:%S')
             
             if not self.is_full_sync:
-                limit_date = datetime.now() - timedelta(days=180)
+                limit_date = self.incremental_start_date()
                 if current_start < limit_date:
                     current_start = limit_date
 
