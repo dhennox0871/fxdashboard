@@ -19,6 +19,7 @@ DRIVERS = [
 
 TRANSTYPE_IDS = (10, 11, 18, 19, 45, 47)
 CHUNK_DAYS = 30
+RECENT_TT45_DAYS = 5
 
 def convert_row(row):
     """Convert Decimal, bytes, and other unsupported types to Python native types."""
@@ -356,6 +357,73 @@ class UniversalMigrator:
         except Exception as e:
             print(f"\n      [ERROR] logtransline in {self.target_db_name}: {e}")
 
+    def migrate_recent_tt45(self):
+        print(f"      Forcing TT45 sync for last {RECENT_TT45_DAYS} days...")
+        try:
+            lt_cols = self.source_columns["logtrans"]
+            lt_select = [
+                "logtransid", "logtransentryno", "entrydate", "transtypeid", "logtransentrytext",
+                "freedescription1" if "freedescription1" in lt_cols else "NULL",
+                "costcenterid" if "costcenterid" in lt_cols else "NULL",
+                "representativeid" if "representativeid" in lt_cols else "NULL",
+                "createby" if "createby" in lt_cols else "NULL",
+                "clientname" if "clientname" in lt_cols else ("CAST(custid AS VARCHAR)" if "custid" in lt_cols else "NULL"),
+                "referenceno" if "referenceno" in lt_cols else ("reference1" if "reference1" in lt_cols else "NULL"),
+                "totalvalue" if "totalvalue" in lt_cols else ("netvalueinput" if "netvalueinput" in lt_cols else ("netvalue" if "netvalue" in lt_cols else "0")),
+            ]
+
+            lt_sql = f"""
+                SELECT {", ".join(lt_select)}
+                FROM [dbo].[logtrans]
+                WHERE transtypeid = 45
+                  AND entrydate >= DATEADD(day, -{RECENT_TT45_DAYS}, GETDATE())
+            """
+            self.mc.execute(lt_sql)
+            lt_rows = [convert_row(r) for r in self.mc.fetchall()]
+            if lt_rows:
+                self.lc.executemany("""
+                    INSERT OR REPLACE INTO logtrans
+                    (logtransid, logtransentryno, entrydate, transtypeid, logtransentrytext,
+                     freedescription1, costcenterid, representativeid, createby, clientname, referenceno, totalvalue)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                """, lt_rows)
+                self.lite.commit()
+            print(f"        TT45 logtrans synced: {len(lt_rows)} rows")
+
+            ltl_cols = self.source_columns["logtransline"]
+            ltl_select = [
+                "ltl.logtranslineid", "ltl.logtransid", "ltl.itemid",
+                "ltl.uomid" if "uomid" in ltl_cols else "NULL",
+                "ltl.warehouseid" if "warehouseid" in ltl_cols else "NULL",
+                "ltl.quantity" if "quantity" in ltl_cols else ("ltl.qty" if "qty" in ltl_cols else ("ltl.qtyinput" if "qtyinput" in ltl_cols else "0")),
+                "ltl.price" if "price" in ltl_cols else ("ltl.priceinput" if "priceinput" in ltl_cols else "0"),
+                "ltl.netvalue" if "netvalue" in ltl_cols else ("ltl.netvalueinput" if "netvalueinput" in ltl_cols else "0"),
+                "ltl.pajakvalue" if "pajakvalue" in ltl_cols else "0",
+                "ltl.hpp" if "hpp" in ltl_cols else "0",
+                "ltl.totalhpp" if "totalhpp" in ltl_cols else "0",
+            ]
+
+            ltl_sql = f"""
+                SELECT {", ".join(ltl_select)}
+                FROM [dbo].[logtransline] ltl
+                INNER JOIN [dbo].[logtrans] lt ON ltl.logtransid = lt.logtransid
+                WHERE lt.transtypeid = 45
+                  AND lt.entrydate >= DATEADD(day, -{RECENT_TT45_DAYS}, GETDATE())
+            """
+            self.mc.execute(ltl_sql)
+            ltl_rows = [convert_row(r) for r in self.mc.fetchall()]
+            if ltl_rows:
+                self.lc.executemany("""
+                    INSERT OR REPLACE INTO logtransline
+                    (logtranslineid, logtransid, itemid, uomid, warehouseid, qty, price, netvalue, pajakvalue, hpp, totalhpp)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """, ltl_rows)
+                self.lite.commit()
+            print(f"        TT45 logtransline synced: {len(ltl_rows)} rows")
+
+        except Exception as e:
+            print(f"      [ERROR] recent TT45 sync in {self.target_db_name}: {e}")
+
     def finalize(self):
         if self.mssql: self.mssql.close()
         if self.lite: self.lite.close()
@@ -369,6 +437,7 @@ def run_sync(db_name, is_full=False):
         migrator.migrate_stockview()
         migrator.migrate_chunked_logtrans()
         migrator.migrate_chunked_logtransline()
+        migrator.migrate_recent_tt45()
         migrator.finalize()
         print(f"Sync complete for {db_name}")
 
