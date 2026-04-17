@@ -192,12 +192,22 @@ func startSyncJob(dbName, script string, scriptArgs []string, env map[string]str
 			return
 		}
 
+		refreshErr := DBPool.Refresh()
+		if refreshErr != nil {
+			log.Printf("Warning: sinkronisasi %s selesai tetapi refresh DBPool gagal: %v", strings.ToUpper(dbName), refreshErr)
+		}
+
 		setSyncProgress(dbName, func(s *SyncProgress) {
 			s.Running = false
 			s.CurrentStep = s.TotalSteps
 			s.Percent = 100
-			s.Message = "Sinkronisasi selesai"
-			s.Error = ""
+			if refreshErr != nil {
+				s.Message = "Sinkronisasi selesai, tetapi refresh database gagal"
+				s.Error = refreshErr.Error()
+			} else {
+				s.Message = "Sinkronisasi selesai"
+				s.Error = ""
+			}
 			s.FinishedAt = time.Now()
 		})
 	}()
