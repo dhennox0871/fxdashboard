@@ -84,6 +84,35 @@ class UniversalMigrator:
                 print(f"      Warning: Could not discover columns for {table}: {e}")
                 self.source_columns[table] = []
 
+    def print_tt45_diagnostics(self, stage):
+        try:
+            self.mc.execute("SELECT COUNT(*), MIN(entrydate), MAX(entrydate) FROM [dbo].[logtrans] WHERE transtypeid = 45")
+            src_total, src_min, src_max = self.mc.fetchone()
+        except Exception as e:
+            src_total, src_min, src_max = -1, None, None
+            print(f"      [DIAG-{stage}] SOURCE TT45 check error: {e}")
+
+        try:
+            self.mc.execute(f"SELECT COUNT(*) FROM [dbo].[logtrans] WHERE transtypeid = 45 AND entrydate >= DATEADD(day, -{RECENT_TT45_DAYS}, GETDATE())")
+            src_recent = self.mc.fetchone()[0]
+        except Exception as e:
+            src_recent = -1
+            print(f"      [DIAG-{stage}] SOURCE TT45 recent check error: {e}")
+
+        try:
+            self.lc.execute("SELECT COUNT(*), MIN(entrydate), MAX(entrydate) FROM logtrans WHERE transtypeid = 45")
+            sql_total, sql_min, sql_max = self.lc.fetchone()
+            self.lc.execute("SELECT COUNT(*) FROM logtrans WHERE transtypeid = 45 AND entrydate >= datetime('now', '-5 day')")
+            sql_recent = self.lc.fetchone()[0]
+        except Exception as e:
+            sql_total, sql_min, sql_max, sql_recent = -1, None, None, -1
+            print(f"      [DIAG-{stage}] SQLITE TT45 check error: {e}")
+
+        print(f"      [DIAG-{stage}] SOURCE TT45 total/min/max: {src_total} / {src_min} / {src_max}")
+        print(f"      [DIAG-{stage}] SOURCE TT45 last{RECENT_TT45_DAYS}d: {src_recent}")
+        print(f"      [DIAG-{stage}] SQLITE TT45 total/min/max: {sql_total} / {sql_min} / {sql_max}")
+        print(f"      [DIAG-{stage}] SQLITE TT45 last{RECENT_TT45_DAYS}d: {sql_recent}")
+
     def transtype_sql_list(self):
         return ",".join(str(x) for x in TRANSTYPE_IDS)
 
@@ -421,6 +450,11 @@ class UniversalMigrator:
                 self.lite.commit()
             print(f"        TT45 logtransline synced: {len(ltl_rows)} rows")
 
+            if len(lt_rows) == 0:
+                print("      [WARN] TT45 source last 5 hari kosong (logtrans)")
+            if len(lt_rows) > 0 and len(ltl_rows) == 0:
+                print("      [WARN] TT45 logtrans ada tapi logtransline kosong untuk 5 hari terakhir")
+
         except Exception as e:
             print(f"      [ERROR] recent TT45 sync in {self.target_db_name}: {e}")
 
@@ -432,12 +466,14 @@ def run_sync(db_name, is_full=False):
     target_db = os.environ.get("DB_SOURCE_DB", db_name)
     migrator = UniversalMigrator(target_db, is_full)
     if migrator.connect():
+        migrator.print_tt45_diagnostics("BEFORE")
         migrator.setup_schema()
         migrator.migrate_masters()
         migrator.migrate_stockview()
         migrator.migrate_chunked_logtrans()
         migrator.migrate_chunked_logtransline()
         migrator.migrate_recent_tt45()
+        migrator.print_tt45_diagnostics("AFTER")
         migrator.finalize()
         print(f"Sync complete for {db_name}")
 
