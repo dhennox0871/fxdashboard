@@ -1,7 +1,10 @@
 services:
   backend:
     image: ${BACKEND_IMAGE:-fxdashboard-backend:local}
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        INSTALL_MSSQL_ODBC: "true"
     container_name: fx-backend
     volumes:
       - ./data:/app/data # Database SQLite
