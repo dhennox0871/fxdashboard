@@ -9,7 +9,7 @@ const defaultDailyConfigs = [
   { id: 'daily_chart', title: 'Revenue Analysis', orderIndex: 4, displayType: 'line_chart', availableTypes: ['line_chart', 'bar_chart'], colorTheme: 'green', isVisible: true },
   { id: 'daily_cashier', title: 'Sales By Cashier', orderIndex: 5, displayType: 'pie_chart', availableTypes: ['pie_chart', 'bar_chart', 'top_list'], colorTheme: 'orange', isVisible: true },
   { id: 'daily_recent', title: 'Recent Transactions', orderIndex: 6, displayType: 'list', availableTypes: ['list'], colorTheme: 'blue', isVisible: true },
-  { id: 'daily_production', title: 'Production SKSMRT (TT45)', orderIndex: 7, displayType: 'table', availableTypes: ['table'], colorTheme: 'green', isVisible: true },
+  { id: 'daily_production', title: 'Production (TT45)', orderIndex: 7, displayType: 'table', availableTypes: ['table'], colorTheme: 'green', isVisible: true },
 ];
 
 const defaultAnnuallyConfigs = [

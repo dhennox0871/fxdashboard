@@ -87,10 +87,9 @@ class UniversalMigrator:
         return ",".join(str(x) for x in TRANSTYPE_IDS)
 
     def incremental_start_date(self):
-        # SKSMRT production (transtype 45) can be needed beyond 180 days.
-        if str(self.target_db_name).lower() == "sksmrt":
-            return datetime(2024, 1, 1)
-        return datetime.now() - timedelta(days=180)
+        # Keep enough history so production transactions (transtype 45)
+        # are available for all databases in dashboard SQLite.
+        return datetime(2024, 1, 1)
 
     def setup_schema(self):
         cur = self.lc

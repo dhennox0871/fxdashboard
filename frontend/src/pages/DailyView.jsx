@@ -8,8 +8,7 @@ import { useAuth } from '../context/AuthContext';
 
 export default function DailyView() {
   const { dailyConfigs } = useWidgetConfig();
-  const { fetchWithAuth, user } = useAuth();
-  const isSKSMRT = String(user?.database || '').toUpperCase() === 'SKSMRT';
+  const { fetchWithAuth } = useAuth();
   const [data, setData] = useState({
     kpi: null, group: [], costcenter: [], chart: [], cashier: [], recent: [], production: { dates: [], rows: [] },
   });
@@ -79,7 +78,7 @@ export default function DailyView() {
           fetchWithAuth(`${baseUrl}/chart${dateParams}`).then(r => r.json()),
           fetchWithAuth(`${baseUrl}/cashier${dateParams}`).then(r => r.json()),
           fetchWithAuth(`${baseUrl}/recent${dateParams}`).then(r => r.json()),
-          isSKSMRT ? fetchWithAuth(`${baseUrl}/production-comparison`).then(r => r.json()) : Promise.resolve({ dates: [], rows: [] }),
+          fetchWithAuth(`${baseUrl}/production-comparison`).then(r => r.json()),
           fetchWithAuth(`/api/settings/last-sync`).then(r => r.json())
         ]);
 
@@ -213,7 +212,6 @@ export default function DailyView() {
 
   const visibleConfigs = dailyConfigs
     .filter(c => c.isVisible)
-    .filter(c => isSKSMRT || c.id !== 'daily_production')
     .sort((a, b) => a.orderIndex - b.orderIndex);
   const dates = getDates();
 

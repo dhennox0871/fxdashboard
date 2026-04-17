@@ -306,13 +306,6 @@ func GetDailySourceTransactions(c *fiber.Ctx) error {
 }
 
 func GetDailyProduction(c *fiber.Ctx) error {
-	if !isSKSMRTDatabase(c) {
-		return c.JSON(DailyProductionResponse{
-			Rows:    []DailyProductionRow{},
-			Summary: DailyProductionSummary{TotalRows: 0, TotalQty: 0},
-		})
-	}
-
 	db := GetDB(c)
 	if db == nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Database tidak tersedia"})
@@ -431,10 +424,6 @@ func GetDailyProduction(c *fiber.Ctx) error {
 }
 
 func GetDailyProductionComparison(c *fiber.Ctx) error {
-	if !isSKSMRTDatabase(c) {
-		return c.JSON(DailyProductionComparisonResponse{Dates: []string{}, Rows: []DailyProductionRow{}})
-	}
-
 	db := GetDB(c)
 	if db == nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Database tidak tersedia"})
