@@ -352,6 +352,29 @@ func GetDailyProduction(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	if summary.TotalRows == 0 {
+		whereClause = `
+			WHERE lt.entrydate BETWEEN ? AND ?
+			AND lt.transtypeid = 45`
+		args = []interface{}{startStr, endStr}
+		if dateFilter != "" {
+			whereClause += " AND COALESCE(DATE(lt.entrydate), substr(CAST(lt.entrydate AS TEXT), 1, 10)) = ?"
+			args = append(args, dateFilter)
+		}
+
+		summaryQuery = `
+			SELECT
+				COUNT(*) AS total_rows,
+				COALESCE(SUM(COALESCE(ltl.qty, 0)), 0) AS total_qty
+			FROM logtrans lt
+			JOIN logtransline ltl ON lt.logtransid = ltl.logtransid
+			` + whereClause
+
+		if err := db.QueryRow(summaryQuery, args...).Scan(&summary.TotalRows, &summary.TotalQty); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+	}
+
 	freeDescriptionExpr := "COALESCE(lt.freedescription1, '')"
 	groupByFreeDescription := "lt.freedescription1"
 	if !columnExists(db, "logtrans", "freedescription1") {
@@ -361,7 +384,7 @@ func GetDailyProduction(c *fiber.Ctx) error {
 
 	rowsQuery := `
 		SELECT
-			DATE(lt.entrydate) AS entrydate,
+			COALESCE(DATE(lt.entrydate), substr(CAST(lt.entrydate AS TEXT), 1, 10)) AS entrydate,
 			` + freeDescriptionExpr + ` AS freedescription1,
 			lt.costcenterid,
 			COALESCE(mc.description, '') AS costcenter_name,
@@ -374,8 +397,8 @@ func GetDailyProduction(c *fiber.Ctx) error {
 		LEFT JOIN masteritem mi ON ltl.itemid = mi.itemid
 		LEFT JOIN masteritemgroup mig ON mi.itemgroupid = mig.itemgroupid
 		` + whereClause + `
-		GROUP BY DATE(lt.entrydate), ` + groupByFreeDescription + `, lt.costcenterid, mc.description, mig.itemgroupcode, mig.description
-		ORDER BY DATE(lt.entrydate) DESC, total_qty DESC
+		GROUP BY COALESCE(DATE(lt.entrydate), substr(CAST(lt.entrydate AS TEXT), 1, 10)), ` + groupByFreeDescription + `, lt.costcenterid, mc.description, mig.itemgroupcode, mig.description
+		ORDER BY COALESCE(DATE(lt.entrydate), substr(CAST(lt.entrydate AS TEXT), 1, 10)) DESC, total_qty DESC
 		LIMIT ?`
 
 	rowArgs := append(append([]interface{}{}, args...), limit)
@@ -417,23 +440,43 @@ func GetDailyProductionComparison(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Database tidak tersedia"})
 	}
 
-	dates := make([]string, 0, 5)
-	datesRows, err := db.Query(`
-		SELECT DISTINCT DATE(entrydate) AS tgl
-		FROM logtrans
-		WHERE transtypeid = 45
-		  AND costcenterid IS NOT NULL
-		ORDER BY tgl DESC
-		LIMIT 5`)
+	loadDates := func(requireCostcenter bool) ([]string, error) {
+		condition := ""
+		if requireCostcenter {
+			condition = "AND costcenterid IS NOT NULL"
+		}
+		datesRows, qErr := db.Query(`
+			SELECT DISTINCT COALESCE(DATE(entrydate), substr(CAST(entrydate AS TEXT), 1, 10)) AS tgl
+			FROM logtrans
+			WHERE transtypeid = 45
+			  ` + condition + `
+			ORDER BY tgl DESC
+			LIMIT 5`)
+		if qErr != nil {
+			return nil, qErr
+		}
+		defer datesRows.Close()
+
+		result := make([]string, 0, 5)
+		for datesRows.Next() {
+			var tgl string
+			if scanErr := datesRows.Scan(&tgl); scanErr == nil && tgl != "" {
+				result = append(result, tgl)
+			}
+		}
+		return result, nil
+	}
+
+	dates, err := loadDates(true)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	defer datesRows.Close()
-
-	for datesRows.Next() {
-		var tgl string
-		if scanErr := datesRows.Scan(&tgl); scanErr == nil && tgl != "" {
-			dates = append(dates, tgl)
+	requireCostcenter := true
+	if len(dates) == 0 {
+		requireCostcenter = false
+		dates, err = loadDates(false)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 	}
 
@@ -458,7 +501,7 @@ func GetDailyProductionComparison(c *fiber.Ctx) error {
 
 	q := `
 		SELECT
-			DATE(lt.entrydate) AS entrydate,
+			COALESCE(DATE(lt.entrydate), substr(CAST(lt.entrydate AS TEXT), 1, 10)) AS entrydate,
 			` + freeDescriptionExpr + ` AS freedescription1,
 			lt.costcenterid,
 			COALESCE(mc.description, '') AS costcenter_name,
@@ -471,10 +514,15 @@ func GetDailyProductionComparison(c *fiber.Ctx) error {
 		LEFT JOIN masteritem mi ON ltl.itemid = mi.itemid
 		LEFT JOIN masteritemgroup mig ON mi.itemgroupid = mig.itemgroupid
 		WHERE lt.transtypeid = 45
-		  AND lt.costcenterid IS NOT NULL
-		  AND DATE(lt.entrydate) IN (` + placeholders + `)
-		GROUP BY DATE(lt.entrydate), ` + groupByFreeDescription + `, lt.costcenterid, mc.description, mig.itemgroupcode, mig.description
-		ORDER BY DATE(lt.entrydate) DESC, costcenter_name, itemgroup_description, freedescription1`
+		  ` + func() string {
+			if requireCostcenter {
+				return "AND lt.costcenterid IS NOT NULL"
+			}
+			return ""
+		}() + `
+		  AND COALESCE(DATE(lt.entrydate), substr(CAST(lt.entrydate AS TEXT), 1, 10)) IN (` + placeholders + `)
+		GROUP BY COALESCE(DATE(lt.entrydate), substr(CAST(lt.entrydate AS TEXT), 1, 10)), ` + groupByFreeDescription + `, lt.costcenterid, mc.description, mig.itemgroupcode, mig.description
+		ORDER BY COALESCE(DATE(lt.entrydate), substr(CAST(lt.entrydate AS TEXT), 1, 10)) DESC, costcenter_name, itemgroup_description, freedescription1`
 
 	rows, err := db.Query(q, args...)
 	if err != nil {
