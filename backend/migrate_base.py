@@ -6,10 +6,9 @@ import sys
 from decimal import Decimal
 from datetime import datetime, timedelta
 
-# --- SQL Server Connection Config ---
-SERVER = os.environ.get("DB_SOURCE_HOST", "idtemp.flexnotesuite.com,18180")
-USERNAME = os.environ.get("DB_SOURCE_USER", "fxt")
-PASSWORD = os.environ.get("DB_SOURCE_PASS", "r3startsaja")
+DEFAULT_SERVER = "idtemp.flexnotesuite.com,18180"
+DEFAULT_USERNAME = "fxt"
+DEFAULT_PASSWORD = "r3startsaja"
 
 DRIVERS = [
     "ODBC Driver 18 for SQL Server",
@@ -20,6 +19,37 @@ DRIVERS = [
 TRANSTYPE_IDS = (10, 11, 18, 19, 45, 47)
 CHUNK_DAYS = 30
 RECENT_TT45_DAYS = 5
+
+
+def resolve_source_settings(target_db_name, db_dir):
+    host = os.environ.get("DB_SOURCE_HOST")
+    source_db = os.environ.get("DB_SOURCE_DB")
+    username = os.environ.get("DB_SOURCE_USER")
+    password = os.environ.get("DB_SOURCE_PASS")
+
+    config_path = os.path.join(db_dir, "db_sources.json")
+    config = {}
+    try:
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as fh:
+                parsed = json.load(fh)
+                if isinstance(parsed, dict):
+                    config = parsed
+    except Exception as e:
+        print(f"[WARN] Gagal membaca db_sources.json: {e}")
+
+    source_entry = config.get(str(target_db_name).upper(), {}) if isinstance(config, dict) else {}
+
+    if not host:
+        host = source_entry.get("host") or DEFAULT_SERVER
+    if not source_db:
+        source_db = source_entry.get("database") or target_db_name
+    if not username:
+        username = source_entry.get("username") or DEFAULT_USERNAME
+    if not password:
+        password = source_entry.get("password") or DEFAULT_PASSWORD
+
+    return host, source_db, username, password
 
 def convert_row(row):
     """Convert Decimal, bytes, and other unsupported types to Python native types."""
@@ -47,24 +77,25 @@ class UniversalMigrator:
         self.db_dir = os.environ.get('DB_DIR', os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data')))
         self.db_path = os.path.join(self.db_dir, f"{self.target_db_name}.db")
         os.makedirs(self.db_dir, exist_ok=True)
+        self.server, self.source_db_name, self.username, self.password = resolve_source_settings(self.target_db_name, self.db_dir)
 
     def connect(self):
-        print(f"\n>>> Connecting to SQL Server for database: {self.target_db_name} ...")
+        print(f"\n>>> Connecting to SQL Server for database: {self.source_db_name} ...")
         for driver in DRIVERS:
             conn_str = (
-                f"DRIVER={{{driver}}};SERVER={SERVER};DATABASE={self.target_db_name};"
-                f"UID={USERNAME};PWD={PASSWORD};TrustServerCertificate=yes;Encrypt=no;Connection Timeout=30;"
+                f"DRIVER={{{driver}}};SERVER={self.server};DATABASE={self.source_db_name};"
+                f"UID={self.username};PWD={self.password};TrustServerCertificate=yes;Encrypt=no;Connection Timeout=30;"
             )
             try:
                 self.mssql = pyodbc.connect(conn_str)
                 self.mc = self.mssql.cursor()
-                print(f"    Connected using {driver}")
+                print(f"    Connected using {driver} @ {self.server} as {self.username}")
                 break
             except pyodbc.Error:
                 continue
         
         if not self.mssql:
-            print(f"    FAILED: Cannot connect to SQL Server database '{self.target_db_name}'.")
+            print(f"    FAILED: Cannot connect to SQL Server database '{self.source_db_name}' @ {self.server}.")
             return False
 
         print(f"    Target SQLite: {self.db_path}")
